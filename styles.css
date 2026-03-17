@@ -39,5 +39,5 @@ button { cursor:pointer; border-radius:0.35rem; border:1px solid var(--border-su
 body.light button { background:#f3f4f6; border-color:#d1d5db; }
 input,select { border-radius:0.35rem; border:1px solid var(--border-subtle); background:rgba(17,24,39,0.9); color:inherit; }
 body.light input, body.light select { background:#fff; border-color:#d1d5db; }
-@media (max-width:640px){ .app-header{flex-direction:column; align-items:flex-start; gap:0.5rem;} .controls-group{width:100%; justify-content:flex-start;} .chart-container{height:380px;} .summary-right{min-width:auto;} }
+@media (max-width:640px){ .app-header{flex-direction:column; align-items:flex-start; gap:0.5rem;} .controls-group{width:100%; justify-content:flex-start;} .chart-container{height:380px;} .summary-right{min-width:auto;} #appMenuPanel { max-height: 60vh !important; overflow-y: auto !important; } }
 .app-footer { margin-top:0.25rem; padding:0.5rem 0.75rem 0.75rem; border-top:1px solid var(--border-subtle); font-size:0.8rem; text-align:center; opacity:0.8; }

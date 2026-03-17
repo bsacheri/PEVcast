@@ -13,23 +13,30 @@
 
 (function(){ try{ window.APP_VERSION='7.12.24'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
 
+function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
+
 let chart;
-let isDark = true;
+let SHOW_SUNRISE_SUNSET = false; // Toggle sunrise/sunset lines on chart
+let isDark = localStorage.getItem('PEVcast-dark-mode') !== null ? JSON.parse(localStorage.getItem('PEVcast-dark-mode')) : true;
 let TEST_MODE_ENABLED = false;
 let currentDataset = null;
+let currentLocationLat = null; // Current location latitude for radar
+let currentLocationLon = null; // Current location longitude for radar
 
 // Range modes: 24h → 72h → 168h → Max → 24h
 const RANGE_STATES = [24, 72, 168, 'max'];
 let rangeIndex = 0; // start at 24h
+const MIN_TEMP_THRESHOLD_FOR_SNOW = 33; // Hide snow data when min temp exceeds this
+const MAX_WIND_DISPLAY = 40; // Maximum wind speed (mph) displayed at top of chart
 
 let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
 let APPARENT_OVERLAY_ENABLED = false; // default off
-let WIND_DISPLAY_MODE = 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
+let WIND_DISPLAY_MODE = 'line'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 
 // Gradient render modes
 // 'plugin' | 'dom' | 'axis-overlay' | 'custom-scale' | 'separate-canvas' | 'off'
-let GRADIENT_MODE = 'plugin';
+let GRADIENT_MODE = 'custom-scale';
 let GRADIENT_WIDTH = 96; // px, user selectable
 let GRADIENT_EXTRA_LEFT = 40; // px extra left padding
 
@@ -50,7 +57,13 @@ const QUICK_SELECT_CITIES = {
   "Portland, OR": { lat: 45.5152, lon: -122.6784 },
   "Phoenix, AZ": { lat: 33.4484, lon: -112.074 },
   "Tucson, AZ": { lat: 32.2226, lon: -110.9747 },
-  "Hilo, HI": { lat: 19.7297, lon: -155.09 }
+  "Hilo, HI": { lat: 19.7297, lon: -155.09 },
+  "Denver, CO": { lat: 39.7392, lon: -104.9903 },
+  "Houston, TX": { lat: 29.7604, lon: -95.3698 },
+  "New Orleans, LA": { lat: 29.9511, lon: -90.2623 },
+  "Cleveland, OH": { lat: 41.4993, lon: -81.6954 },
+  "Orlando, FL": { lat: 28.5421, lon: -81.3774 },
+  "Toronto, ON": { lat: 43.6532, lon: -79.3832 }
 };
 
 function $(id){ return document.getElementById(id); }
@@ -119,7 +132,7 @@ async function fetchForecastLive(lat, lon){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&hourly=temperature_2m,apparent_temperature,precipitation,rain,snowfall,wind_speed_10m,wind_direction_10m,precipitation_probability`
     + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset`
-    + `&timezone=auto&forecast_days=16`;
+    + `&timezone=auto&forecast_days=16&wind_speed_unit=mph`;
   const res = await fetch(url); if (!res.ok) throw new Error('Forecast fetch failed');
   return await res.json();
 }
@@ -133,7 +146,7 @@ function buildDataFromLive(apiData){
     const precipIn = hourly.precipitation[i] / 25.4;
     const rainIn = hourly.rain[i] / 25.4;
     const snowIn = hourly.snowfall[i] / 25.4;
-    const windMph = hourly.wind_speed_10m[i] * 2.23694;
+    const windMph = hourly.wind_speed_10m[i];
     const windDir = hourly.wind_direction_10m[i];
     const precipProb = hourly.precipitation_probability ? hourly.precipitation_probability[i] : null;
     const precipType = snowIn > 0 ? 'snow' : (rainIn > 0 ? 'rain' : 'none');
@@ -191,16 +204,16 @@ Chart.register(dayLabelsPlugin);
 const windBackgroundPlugin = { id: 'windBackground', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'overlay') return; const {ctx, chartArea, scales:{x, yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const accumData = chart.data.datasets.find(ds => ds.label === 'Accumulation')?.data || []; ctx.save(); for(let i = 0; i < labels.length; i++){ const w = wind[i]; if(w == null || w === 0) continue; const accum = accumData[i]; if(accum && accum > 0.001) continue; const px = x.getPixelForValue(i - 0.5); const pw = x.getPixelForValue(i + 0.5) - px; if(px + pw < chartArea.left || px > chartArea.right) continue; let color = 'rgba(0,0,0,0)'; if(w >= 20) color = isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)'; else if(w >= 12) color = isDark ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.06)'; ctx.fillStyle = color; ctx.fillRect(px, chartArea.top, pw, chartArea.bottom - chartArea.top); } ctx.restore(); } };
 
 // Wind Barbs plugin
-const windBarbsPlugin = { id: 'windBarbs', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'barbs') return; const {ctx, chartArea, scales:{x, yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const baseY = chartArea.top + 100; ctx.save(); ctx.font = 'bold 9px Arial'; for(let i = 0; i < labels.length; i++){ const w = wind[i]; if(w == null) continue; const windMph = Array.isArray(w) ? w[0] : w; const dirDeg = chart.data.windDir?.[i] ?? 0; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const barbLen = Math.min(windMph / 2.5, 8); ctx.save(); ctx.translate(px, baseY); ctx.rotate((dirDeg + 180) * Math.PI / 180); let strokeColor = '#22d3ee'; if(windMph >= 20) strokeColor = '#ef4444'; else if(windMph >= 12) strokeColor = '#f59e0b'; else if(windMph >= 7) strokeColor = '#eab308'; ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -barbLen); ctx.lineTo(0, barbLen); if(windMph >= 10){ ctx.moveTo(0, -barbLen); ctx.lineTo(2, -barbLen + 2); } if(windMph >= 20){ ctx.moveTo(0, -barbLen + 3); ctx.lineTo(2, -barbLen + 5); } ctx.stroke(); ctx.restore(); ctx.fillStyle = strokeColor; ctx.fillText(windMph.toFixed(0), px, baseY + 12); } ctx.restore(); } };
+const windBarbsPlugin = { id: 'windBarbs', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'barbs') return; const {ctx, chartArea, scales:{x, yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const baseY = chartArea.top + (chartArea.bottom - chartArea.top) * 0.10; ctx.save(); ctx.font = 'bold 9px Arial'; for(let i = 0; i < labels.length; i++){ const w = wind[i]; if(w == null) continue; const windMph = Array.isArray(w) ? w[0] : w; const dirDeg = chart.data.windDir?.[i] ?? 0; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const barbLen = Math.min(windMph / 2.5, 8); ctx.save(); ctx.translate(px, baseY); ctx.rotate((dirDeg + 180) * Math.PI / 180); let strokeColor = '#22d3ee'; if(windMph >= 20) strokeColor = '#ef4444'; else if(windMph >= 12) strokeColor = '#f59e0b'; else if(windMph >= 7) strokeColor = '#eab308'; ctx.strokeStyle = strokeColor; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -barbLen); ctx.lineTo(0, barbLen); if(windMph >= 10){ ctx.moveTo(0, -barbLen); ctx.lineTo(2, -barbLen + 2); } if(windMph >= 20){ ctx.moveTo(0, -barbLen + 3); ctx.lineTo(2, -barbLen + 5); } ctx.stroke(); ctx.restore(); ctx.fillStyle = strokeColor; ctx.fillText(windMph.toFixed(0), px, baseY + 12); } ctx.restore(); } };
 
 // Wind Arrows plugin
-const windArrowsPlugin = { id: 'windArrows', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'arrows') return; const {ctx, chartArea, scales:{x, yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const directions = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']; const baseY = chartArea.top + 100; ctx.save(); ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; for(let i = 0; i < labels.length; i++){ const w = wind[i]; if(w == null) continue; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const windMph = Array.isArray(w) ? w[0] : w; const dirDeg = (chart.data.windDir?.[i] ?? 0) / 45; const dirIdx = Math.round(dirDeg) % 8; const arrow = directions[dirIdx]; let arrowColor = '#22d3ee'; if(windMph >= 20) arrowColor = '#ef4444'; else if(windMph >= 12) arrowColor = '#f59e0b'; else if(windMph >= 7) arrowColor = '#eab308'; ctx.fillStyle = arrowColor; ctx.globalAlpha = 1.0; ctx.fillText(arrow, px, baseY); ctx.font = 'bold 9px Arial'; ctx.fillText(windMph.toFixed(0), px, baseY + 12); } ctx.restore(); } };
+const windArrowsPlugin = { id: 'windArrows', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'arrows') return; const {ctx, chartArea, scales:{x, yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const directions = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']; const baseY = chartArea.top + (chartArea.bottom - chartArea.top) * 0.10; ctx.save(); ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; for(let i = 0; i < labels.length; i++){ const w = wind[i]; if(w == null) continue; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const windMph = Array.isArray(w) ? w[0] : w; const dirDeg = (chart.data.windDir?.[i] ?? 0) / 45; const dirIdx = Math.round(dirDeg) % 8; const arrow = directions[dirIdx]; let arrowColor = '#22d3ee'; if(windMph >= 20) arrowColor = '#ef4444'; else if(windMph >= 12) arrowColor = '#f59e0b'; else if(windMph >= 7) arrowColor = '#eab308'; ctx.fillStyle = arrowColor; ctx.globalAlpha = 1.0; ctx.fillText(arrow, px, baseY); ctx.font = 'bold 9px Arial'; ctx.fillText(windMph.toFixed(0), px, baseY + 12); } ctx.restore(); } };
 
 // Wind Speed Color Overlay
 const windOverlayData = { mode: 'overlay', mphThresholds: [{threshold: 12, color: 'rgba(234, 179, 8, 0.08)'}, {threshold: 20, color: 'rgba(249, 115, 22, 0.12)'}, {threshold: 999, color: 'rgba(239, 68, 68, 0.15)'}] };
 
 // Wind Speed Line Labels Plugin
-const windSpeedLabelsPlugin = { id: 'windSpeedLabels', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'line') return; const {ctx, chartArea, scales:{x, yAccum}} = chart; if(!x || !yAccum || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const labelDates = labels.map(t=>t.substring(0,10)); const labelDatesList = labelDates; const indicesByDay={}; for(let i=0;i<labels.length;i++){ const d=labelDatesList[i]; (indicesByDay[d] ||= []).push(i); } const firstMinMaxWindByDay={}; for(const [d,idxs] of Object.entries(indicesByDay)){ if(!idxs||!idxs.length) continue; let minV=Infinity, maxV=-Infinity; for(const i of idxs){ const v=wind[i]; if(v!=null && (minV===Infinity || v<minV)) minV=v; if(v!=null && (maxV===-Infinity || v>maxV)) maxV=v; } if(minV===Infinity) continue; let minIdx=null, maxIdx=null; for(const i of idxs){ const v=wind[i]; if(minIdx===null && v===minV) minIdx=i; if(maxIdx===null && v===maxV) maxIdx=i; if(minIdx!==null && maxIdx!==null) break; } firstMinMaxWindByDay[d]={minIdx,maxIdx}; } ctx.save(); ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = isDark ? '#e5e7eb' : '#111827'; for(let i = 0; i < labels.length; i++){ const d = labelDatesList[i]; const fm = firstMinMaxWindByDay[d]; if(!fm) continue; const isMin = i===fm.minIdx; const isMax = i===fm.maxIdx; if(!isMin && !isMax) continue; const w = wind[i]; if(w == null) continue; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const py = yAccum.getPixelForValue((w / 60 * (yAccum.max - yAccum.min)) + yAccum.min); const offsetY = isMin ? 12 : -12; ctx.fillText(`${w.toFixed(1)}\nMPH`, px, py + offsetY); } ctx.restore(); } };
+const windSpeedLabelsPlugin = { id: 'windSpeedLabels', afterDatasetsDraw(chart){ if(WIND_DISPLAY_MODE !== 'line') return; const {ctx, chartArea, scales:{x, yAccum}} = chart; if(!x || !yAccum || !chartArea) return; const labels = chart.data.labels || []; const wind = chart.data.windData || []; if(!wind.length) return; const labelDates = labels.map(t=>t.substring(0,10)); const labelDatesList = labelDates; const indicesByDay={}; for(let i=0;i<labels.length;i++){ const d=labelDatesList[i]; (indicesByDay[d] ||= []).push(i); } const firstMinMaxWindByDay={}; for(const [d,idxs] of Object.entries(indicesByDay)){ if(!idxs||!idxs.length) continue; let minV=Infinity, maxV=-Infinity; for(const i of idxs){ const v=wind[i]; if(v!=null && (minV===Infinity || v<minV)) minV=v; if(v!=null && (maxV===-Infinity || v>maxV)) maxV=v; } if(minV===Infinity) continue; let minIdx=null, maxIdx=null; for(const i of idxs){ const v=wind[i]; if(minIdx===null && v===minV) minIdx=i; if(maxIdx===null && v===maxV) maxIdx=i; if(minIdx!==null && maxIdx!==null) break; } firstMinMaxWindByDay[d]={minIdx,maxIdx}; } ctx.save(); ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = isDark ? '#e5e7eb' : '#111827'; for(let i = 0; i < labels.length; i++){ const d = labelDatesList[i]; const fm = firstMinMaxWindByDay[d]; if(!fm) continue; const isMin = i===fm.minIdx; const isMax = i===fm.maxIdx; if(!isMin && !isMax) continue; const w = wind[i]; if(w == null) continue; const px = x.getPixelForValue(i); if(px < chartArea.left || px > chartArea.right) continue; const py = yAccum.getPixelForValue((w / MAX_WIND_DISPLAY * (yAccum.max - yAccum.min)) + yAccum.min); const offsetY = isMin ? 12 : -12; ctx.fillText(`${w.toFixed(1)}\nMPH`, px, py + offsetY); } ctx.restore(); } };
 
 Chart.register(windBarbsPlugin, windArrowsPlugin, windBackgroundPlugin, windSpeedLabelsPlugin);
 
@@ -289,7 +302,7 @@ function buildChart(dataset){
 
   // Reduce liquid (green) ~50%; snow unchanged
   const scaledPrecip = precip.map((v,i)=>{ const isLiquid=(temps[i]>32) || (rain[i]>0 && snow[i]===0); const f=isLiquid?0.5:1.0; return (v/accumMax)*f; });
-  const scaledWind = wind.map(w => w ? Math.min(w / 60 * accumMax, accumMax) : null);
+  const scaledWind = wind.map(w => w ? Math.min(w / MAX_WIND_DISPLAY * accumMax, accumMax) : null);
   let barColors = hourly.map(h=> (h.temperatureF>32 ? '#10b981' : '#60a5fa'));
   
   // Wind overlay - change bar color based on wind speed
@@ -299,8 +312,9 @@ function buildChart(dataset){
 
   const tr=$("totalRain"), ts=$("totalSnow"), es=$("estSnow"), wr=$("windRange");
   if(tr) tr.textContent=`${rain.reduce((a,b)=>a+b,0).toFixed(2)}"`;
-  if(ts) ts.textContent=`${snow.reduce((a,b)=>a+b,0).toFixed(2)}"`;
-  if(es) es.textContent=`${hourly.reduce((s,h)=>{ const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(!likely) return s; const ratio=getSnowRatio(h.temperatureF); return s+(h.precipIn||0)*ratio; },0).toFixed(2)}"`;
+  const hidesnow = yMin > MIN_TEMP_THRESHOLD_FOR_SNOW;
+  if(ts){ ts.textContent=`${snow.reduce((a,b)=>a+b,0).toFixed(2)}"`; ts.parentElement.style.display = hidesnow ? 'none' : 'block'; }
+  if(es){ es.textContent=`${hourly.reduce((s,h)=>{ const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(!likely) return s; const ratio=getSnowRatio(h.temperatureF); return s+(h.precipIn||0)*ratio; },0).toFixed(2)}`; es.parentElement.style.display = hidesnow ? 'none' : 'block'; }
   
   // Calculate daily wind high/low
   if(wr){
@@ -325,7 +339,7 @@ function buildChart(dataset){
 
   const annotations={};
   // Day/Night shading and sunrise/sunset lines
-  try{ if (dataset.daily && dataset.daily.length>0 && typeof addDayNightBoxesAligned==='function'){ addDayNightBoxesAligned(labels, dataset.daily, annotations, yMin, yMax); } }catch{}
+  try{ if (dataset.daily && dataset.daily.length>0 && typeof addDayNightBoxesAligned==='function'){ addDayNightBoxesAligned(labels, dataset.daily, annotations, yMin, yMax, SHOW_SUNRISE_SUNSET); } }catch{}
 
   // Midnight lines — theme-aware: black (light), rgba(255,255,255,0.5) (dark)
   try{ for (let i=0;i<labels.length;i++){ const d=new Date(labels[i]); if (d.getHours()===0 && d.getMinutes()===0){ const edge=i-0.5; const color = isDark ? 'rgba(255,255,255,0.5)' : '#000000'; annotations[`midnight-${i}`]={ type:'line', xScaleID:'x', yScaleID:'yTemp', xMin:edge, xMax:edge, borderColor:color, borderWidth:1.5, borderDash:[] }; } } }catch{}
@@ -348,7 +362,7 @@ function buildChart(dataset){
       datalabels:{ display:(c)=>{ const i=c.dataIndex; const d=labelDates[i]; const fm=firstMinMaxIndexByDay[d]; if(!fm) return false; return i===fm.minIdx || i===fm.maxIdx; }, formatter:(v)=>`${Math.round(v)}°`, align:(c)=>{ const i=c.dataIndex; const fm=firstMinMaxIndexByDay[labelDates[i]]; return (!fm)?'top':(i===fm.minIdx?'bottom':'top'); }, offset:4, color: isDark ? '#e5e7eb' : '#111827', backgroundColor:'rgba(0,0,0,0)', borderWidth:0, clamp:true }
     },
     { type:'line', label:'Feels Like', data:apTemps, yAxisID:'yTemp', borderColor:'#f472b6', backgroundColor:'rgba(244,114,182,0.18)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5, hidden: !APPARENT_OVERLAY_ENABLED },
-    { type:'bar', label:'Accumulation', data:scaledPrecip, yAxisID:'yAccum', backgroundColor:barColors, borderColor:barColors.map(()=>"#111827"), borderWidth:1, categoryPercentage:1.0, barPercentage:1.0 },
+    { type:'bar', label:'Accumulation', data:scaledPrecip, yAxisID:'yAccum', backgroundColor:barColors, borderColor:barColors.map(()=>"#111827"), borderWidth:1, categoryPercentage:1.0, barPercentage:1.0, hidden: yMin > MIN_TEMP_THRESHOLD_FOR_SNOW },
     { type:'line', label:'Chance of Precip', data:prob, yAxisID:'yProb', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.26)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5 }
   ];
   
@@ -358,24 +372,162 @@ function buildChart(dataset){
   }
 
   chart = new Chart(ctx, {
-    type:'bar',
-    data:{ labels, datasets:baseDatasets, windDir:windDir, windData:wind },
-    options:{
-      responsive: responsiveMode, maintainAspectRatio:false,
-      interaction:{ mode:'index', intersect:false },
-      layout:{ padding:{ left: (GRADIENT_MODE==='plugin'? (GRADIENT_EXTRA_LEFT): GRADIENT_EXTRA_LEFT), top: 40 } },
-      onClick:(evt)=>{ const a=chart.chartArea; if(!a) return; const pos=Chart.helpers.getRelativePosition((evt&&evt.native)?evt.native:evt, chart); if(!(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)) return; const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); const h=hourly[i]; const day=calcDayAccum(hourly, i); const host=$("statusLine"); const svEl = host ? host.querySelector('.summary-value') : null; if(svEl){ const ratio=getSnowRatio(h.temperatureF); const estHour = ((h.temperatureF<=32)?(h.precipIn||0)*ratio:0).toFixed(2); const windSpd = h.windMph ? h.windMph.toFixed(1) : 'N/A'; const windDir = h.windDir ?? 'N/A'; svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}°, Precip: ${h.precipIn.toFixed(2)}", Snow: ${h.snowIn.toFixed(2)}", Rain: ${h.rainIn.toFixed(2)}", Est Snow: ${estHour}", Chance: ${h.precipProb??'N/A'}%, Wind: ${windSpd} mph @ ${windDir}°, Day Accum (Liquid): ${day.liquid.toFixed(2)}", Day Accum (Snow): ${day.estSnow.toFixed(1)}"`; }
-        setCursorAnnotation(chart, labels[i]); chart.update(); },
-      plugins:{ legend:{ display:false }, annotation:{ annotations }, datalabels:{ display:false }, hourTicksPlugin:{ enabled:true, skipForBar: scaledPrecip }, tooltip:{ displayColors:false, callbacks:{ title:(items)=> items.length? formatTooltipTime(items[0].label):'', label:(ctx)=>{ const i=ctx.dataIndex; const h=hourly[i]; if(ctx.dataset.yAxisID==='yTemp' && ctx.dataset.label==='Temperature') return `Temp: ${Math.round(h.temperatureF)}°`; if(ctx.dataset.yAxisID==='yTemp' && ctx.dataset.label==='Feels Like') return (h.apparentF!=null?`Feels Like: ${Math.round(h.apparentF)}°`:'Feels Like: N/A'); if(ctx.dataset.yAxisID==='yProb') return `Chance: ${h.precipProb??'N/A'}%`; if(ctx.dataset.yAxisID==='yAccum') return `Accum: ${h.precipIn.toFixed(2)}"`; return ''; }, footer:(items)=>{ if(!items||!items.length) return ''; const i=items[0].dataIndex; const d=calcDayAccum(hourly,i); const h=hourly[i]; const windSpd = h.windMph ? h.windMph.toFixed(1) : 'N/A'; const windDir = h.windDir ?? 'N/A'; return [`Wind: ${windSpd} mph @ ${windDir}°`, `Day Accum (Liquid): ${d.liquid.toFixed(2)}"`, `Day Accum (Snow): ${d.estSnow.toFixed(1)}"`]; } } }
+    type: "bar",
+    data: { labels, datasets: baseDatasets, windDir: windDir, windData: wind },
+    options: {
+      responsive: responsiveMode,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      layout: {
+        padding: {
+          left:
+            GRADIENT_MODE === "plugin"
+              ? GRADIENT_EXTRA_LEFT
+              : GRADIENT_EXTRA_LEFT,
+          top: 40,
+        },
       },
-      scales:{
-        x:{ ticks:{ color:isDark?'#e5e7eb':'#111827', callback:(val,idx)=>formatXAxisHour(labels[idx]), autoSkip:true, autoSkipPadding:2, maxRotation:0, minRotation:0, maxTicksLimit: approxMaxTicks }, grid:{ display:false } },
-        yTemp:{ position:'left', display: !hideChartYAxis, min:yMin, max:yMax, ticks:{ color: isDark?'#e5e7eb':'#111827', callback:(v)=>`${v}°` }, grid:{ color:isDark? 'rgba(55,65,81,0.5)' : 'rgba(209,213,219,0.7)' }, title:{ display: !hideChartYAxis, text:'Temperature (F)', color:isDark?'#e5e7eb':'#111827' } },
-        yAccum:{ position:'right', min:0, max:accumMax, ticks:{ display:false }, grid:{ drawOnChartArea:false } },
-        yProb:{ position:'right', min:0, max:100, display:true, grid:{ drawOnChartArea:false }, ticks:{ display:false } }
-      }
+      onClick: (evt) => {
+        const a = chart.chartArea;
+        if (!a) return;
+        const pos = Chart.helpers.getRelativePosition(
+          evt && evt.native ? evt.native : evt,
+          chart,
+        );
+        if (
+          !(
+            pos.x >= a.left &&
+            pos.x <= a.right &&
+            pos.y >= a.top &&
+            pos.y <= a.bottom
+          )
+        )
+          return;
+        const sx = chart.scales.x;
+        const idx = sx.getValueForPixel(pos.x);
+        const i = Math.max(
+          0,
+          Math.min(
+            labels.length - 1,
+            typeof idx === "number" ? Math.round(idx) : 0,
+          ),
+        );
+        const h = hourly[i];
+        const day = calcDayAccum(hourly, i);
+        const host = $("statusLine");
+        const svEl = host ? host.querySelector(".summary-value") : null;
+        if (svEl) {
+          const ratio = getSnowRatio(h.temperatureF);
+          const estHour = (
+            h.temperatureF <= 32 ? (h.precipIn || 0) * ratio : 0
+          ).toFixed(2);
+          const windSpd = h.windMph ? h.windMph.toFixed(1) : "N/A";
+          const windDir = h.windDir ?? "N/A";
+          svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}°, Precip: ${h.precipIn.toFixed(2)}", Snow: ${h.snowIn.toFixed(2)}", Rain: ${h.rainIn.toFixed(2)}", Est Snow: ${estHour}", Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}°, Day Accum (Liquid): ${day.liquid.toFixed(2)}", Day Accum (Snow): ${day.estSnow.toFixed(1)}"`;
+        }
+        setCursorAnnotation(chart, labels[i]);
+        chart.update();
+      },
+      plugins: {
+        legend: { display: false },
+        annotation: { annotations },
+        datalabels: { display: false },
+        hourTicksPlugin: { enabled: true, skipForBar: scaledPrecip },
+        tooltip: {
+          displayColors: false,
+          callbacks: {
+            title: (items) =>
+              items.length ? formatTooltipTime(items[0].label) : "",
+            label: (ctx) => {
+              const i = ctx.dataIndex;
+              const h = hourly[i];
+              if (
+                ctx.dataset.yAxisID === "yTemp" &&
+                ctx.dataset.label === "Temperature"
+              )
+                return `Temp: ${Math.round(h.temperatureF)}°`;
+              if (
+                ctx.dataset.yAxisID === "yTemp" &&
+                ctx.dataset.label === "Feels Like"
+              )
+                return h.apparentF != null
+                  ? `Feels Like: ${Math.round(h.apparentF)}°`
+                  : "Feels Like: N/A";
+              if (ctx.dataset.yAxisID === "yProb")
+                return `Chance: ${h.precipProb ?? "N/A"}%`;
+              if (ctx.dataset.yAxisID === "yAccum")
+                return `Accum: ${h.precipIn.toFixed(2)}"`;
+              return "";
+            },
+            footer: (items) => {
+              if (!items || !items.length) return "";
+              const i = items[0].dataIndex;
+              const h = hourly[i];
+              const windSpd = h.windMph ? h.windMph.toFixed(1) : "N/A";
+              const windDir = h.windDir ?? "N/A";
+              return [`Wind: ${windSpd} mph`];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: isDark ? "#e5e7eb" : "#111827",
+            callback: (val, idx) => formatXAxisHour(labels[idx]),
+            autoSkip: true,
+            autoSkipPadding: 2,
+            maxRotation: 0,
+            minRotation: 0,
+            maxTicksLimit: approxMaxTicks,
+          },
+          grid: { display: false },
+        },
+        yTemp: {
+          position: "left",
+          display: !hideChartYAxis,
+          min: yMin,
+          max: yMax,
+          ticks: {
+            color: isDark ? "#e5e7eb" : "#111827",
+            callback: (v) => `${v}°`,
+          },
+          grid: {
+            color: isDark ? "rgba(55,65,81,0.5)" : "rgba(209,213,219,0.7)",
+          },
+          title: {
+            display: !hideChartYAxis,
+            text: "Temperature (F)",
+            color: isDark ? "#e5e7eb" : "#111827",
+          },
+        },
+        yAccum: {
+          position: "right",
+          min: 0,
+          max: accumMax,
+          ticks: { display: false },
+          grid: { drawOnChartArea: false },
+        },
+        yProb: {
+          position: "right",
+          min: 0,
+          max: 100,
+          display: true,
+          grid: { drawOnChartArea: false },
+          ticks: { display: false },
+        },
+      },
     },
-    plugins:[ChartDataLabels, hourTicksPlugin, TempColorBarPlugin, pastHoursHatchingPlugin, ...(rangeState !== 24 ? [dayLabelsPlugin] : []), ...(WIND_DISPLAY_MODE==='barbs'?[windBarbsPlugin]:[]), ...(WIND_DISPLAY_MODE==='arrows'?[windArrowsPlugin]:[]), ...(WIND_DISPLAY_MODE==='overlay'?[windBackgroundPlugin]:[])]
+    plugins: [
+      ChartDataLabels,
+      hourTicksPlugin,
+      TempColorBarPlugin,
+      pastHoursHatchingPlugin,
+      ...(rangeState !== 24 ? [dayLabelsPlugin] : []),
+      ...(WIND_DISPLAY_MODE === "barbs" ? [windBarbsPlugin] : []),
+      ...(WIND_DISPLAY_MODE === "arrows" ? [windArrowsPlugin] : []),
+      ...(WIND_DISPLAY_MODE === "overlay" ? [windBackgroundPlugin] : []),
+    ],
   });
 
   // Render external gradients
@@ -428,6 +580,7 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mApparent"> Feels Like Overlay</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mSunrise"> Sunrise/Sunset</label>
   <div style="margin:8px 0 4px 0;font-weight:600;">Snow Ratio</div>
   <select id="mSnow" style="width:100%;margin-bottom:8px"></select>
   <div style="margin:8px 0 4px 0;font-weight:600;">Gradient Mode</div>
@@ -443,6 +596,7 @@ function ensureAppMenu(){
   <div style="margin:8px 0 4px 0;font-weight:600;">Wind Display</div>
   <select id="mWind" style="width:100%;margin-bottom:8px"></select>
   <button id="mData" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Weather Data</button>
+  <button id="mAbout" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">About</button>
   `;
 
   function openMenu(){ panel.style.display='block'; if(!_menuOutsideHandler){ _menuOutsideHandler = (e)=>{ if(!panel.contains(e.target) && e.target!==btn){ closeMenu(); } }; document.addEventListener('click', _menuOutsideHandler, true); } }
@@ -462,12 +616,16 @@ function ensureAppMenu(){
 
   const mWind=$("mWind"); if(mWind){ const windModes=[['off','Off'],['line','Wind Speed Line'],['barbs','Wind Barbs'],['arrows','Wind Arrows'],['overlay','Wind Color Overlay']]; windModes.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; mWind.appendChild(o); }); mWind.value = WIND_DISPLAY_MODE; mWind.addEventListener('change', ()=>{ WIND_DISPLAY_MODE=mWind.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
 
-  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mData=$("mData");
+  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mSunrise=$("mSunrise"), mData=$("mData");
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
   if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
+  if(mSunrise){ mSunrise.checked = SHOW_SUNRISE_SUNSET; mSunrise.addEventListener('change', ()=>{ SHOW_SUNRISE_SUNSET=!SHOW_SUNRISE_SUNSET; if(currentDataset) buildChart(currentDataset); mSunrise.checked=SHOW_SUNRISE_SUNSET; /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
+
+  const mAbout=$("mAbout");
+  if(mAbout){ mAbout.addEventListener('click', ()=>{ showAboutDialog(); closeMenu(); }); }
 
   updateChromeForTheme();
 }
@@ -542,14 +700,14 @@ function showWeatherData(){
 }
 
 // ---------- Other UI wiring ----------
-function toggleTheme(){ isDark=!isDark; document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
+function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const qs=$("quickSelect"); const name=qs?.value||"Moon Township, PA"; const coords=QUICK_SELECT_CITIES[name]||QUICK_SELECT_CITIES["Moon Township, PA"]; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){ rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ const fullLabels=currentDataset.hourly.map(h=>h.time); const nowIdx=findNowIndex(fullLabels); updateRangeButtonLabel(fullLabels, nowIdx); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; if(currentDataset) buildChart(currentDataset); }
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
 
-async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon); setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
-async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); }
+async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon); currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
+async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
 
 function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
   body.maximized .app-header, body.maximized .summary-box, body.maximized .app-footer, body.maximized #testModeBanner, body.maximized #statusLine, body.maximized #matchModal, body.maximized #versionChip { display: none !important; }
@@ -563,7 +721,7 @@ function updateRangeButtonLabel(fullLabels, nowIdxFull){ const b=$("rangeToggle"
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); const entries = Object.entries(QUICK_SELECT_CITIES).sort((a,b)=> a[1].lon - b[1].lon); for (const [name] of entries){ const opt=document.createElement('option'); opt.value=name; opt.textContent=name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', ()=>{ if(!navigator.geolocation){ alert('Geolocation not supported by this browser.'); return;} navigator.geolocation.getCurrentPosition(async(pos)=>{ const {latitude:lat, longitude:lon}=pos.coords||{}; await loadCityByName(`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`, {lat, lon}); }, (err)=>{ alert('Unable to get location: '+(err?.message||'Unknown error')); }, {enableHighAccuracy:true, timeout:8000, maximumAge:300000}); }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', ()=>{ if(!navigator.geolocation){ alert('Geolocation not supported by this browser.'); return;} navigator.geolocation.getCurrentPosition(async(pos)=>{ const {latitude:lat, longitude:lon}=pos.coords||{}; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`, {lat, lon}); }, (err)=>{ alert('Unable to get location: '+(err?.message||'Unknown error')); }, {enableHighAccuracy:true, timeout:8000, maximumAge:300000}); }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -576,12 +734,16 @@ function updateVersionChip(){
 
 // ---------- Boot ----------
 window.addEventListener('DOMContentLoaded', async ()=>{
+  // Apply initial theme classes based on localStorage value
+  document.body.classList.toggle('dark', isDark);
+  document.body.classList.toggle('light', !isDark);
+  
   try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v${""+"7.12.24"}`; } catch(e){ console.warn(e); }
-  installMaximizeStyles(); ensureMaximizeUI(); ensureAppMenu(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
+  installMaximizeStyles(); ensureMaximizeUI(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
   populateQuickSelectSorted(); ensureGPSButton();
 
   $("quickSelect")?.addEventListener("change", handleQuickSelectChange);
-  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude});}); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
+  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
   $("themeToggle")?.addEventListener("click", toggleTheme);
   $("testModeToggle")?.addEventListener("click", toggleTestMode);
   $("rangeToggle")?.addEventListener("click", toggleRange);
@@ -590,6 +752,8 @@ window.addEventListener('DOMContentLoaded', async ()=>{
 
   const coords = QUICK_SELECT_CITIES['Moon Township, PA'];
   const qs=$("quickSelect"); if(qs) qs.value='Moon Township, PA';
+  currentLocationLat = coords.lat;
+  currentLocationLon = coords.lon;
   try{
     const data = await loadWeatherData('Moon Township, PA', coords.lat, coords.lon);
     const fullLabels = data.hourly.map(h=>h.time); const nowIdx=findNowIndex(fullLabels); updateRangeButtonLabel(fullLabels, nowIdx);
@@ -599,13 +763,159 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   window.addEventListener('resize', ()=>{ if(LAYOUT_MODE==='fit' && currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart);}catch{} } });
 });
 
+// ======= About Dialog =======
+function showAboutDialog(){
+  let backdrop = document.getElementById('aboutBackdrop');
+  if(!backdrop){
+    backdrop = document.createElement('div');
+    backdrop.id = 'aboutBackdrop';
+    Object.assign(backdrop.style, { position:'fixed', inset:'0', background:'rgba(0,0,0,0.5)', zIndex:'5000', display:'flex', alignItems:'center', justifyContent:'center' });
+    const dialog = document.createElement('div');
+    Object.assign(dialog.style, { background: isDark ? '#1f2937' : '#ffffff', color: isDark ? '#e5e7eb' : '#111827', padding:'24px', borderRadius:'12px', maxWidth:'500px', width:'90%', maxHeight:'80vh', overflowY:'auto', boxShadow:'0 10px 40px rgba(0,0,0,0.3)' });
+    dialog.innerHTML = `
+      <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
+      <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>7.12.24</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/17/2026 7:23 PM</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
+      <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
+        <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
+        <ul style="margin:0 0 16px 0; padding-left:20px; list-style:disc;">
+          <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Geolocation</a></li>
+          <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Forecast</a></li>
+          <li style="margin:6px 0;"><a href="https://www.chartjs.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Chart.js v4.4.1</a></li>
+          <li style="margin:6px 0;"><a href="https://radar.weather.gov/" target="_blank" style="color:#3b82f6; text-decoration:none;">NOAA Weather Radar</a></li>
+        </ul>
+      </div>
+      <button id="aboutClose" style="width:100%; padding:10px; margin-top:12px; border:1px solid ${isDark ? '#374151' : '#d1d5db'}; background:${isDark ? '#111827' : '#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Close</button>
+    `;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    document.getElementById('aboutClose').addEventListener('click', ()=>{ backdrop.remove(); });
+    backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) backdrop.remove(); });
+  } else {
+    backdrop.style.display = 'flex';
+  }
+}
+
+// ======= Radar Button =======
+function ensureRadarButton(){
+  if(document.getElementById('radarBtn')) return;
+  // const btn = document.createElement('button');
+  // btn.id = 'radarBtn';
+  // btn.title = 'View Weather Radar';
+  // btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5"><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="11"/></svg>';
+  // btn.style.display = 'inline-flex';
+  // btn.style.alignItems = 'center';
+  // btn.style.justifyContent = 'center';
+  // btn.style.padding = '4px 8px';
+  // btn.style.marginLeft = '6px';
+  // btn.style.borderRadius = '6px';
+  // btn.style.cursor = 'pointer';
+// Ensure a single <style> block to enable CSS-only hover glow for #radarBtn
+(function(){
+  var sty = document.getElementById('radarBtnStyles');
+  if(!sty){
+    sty = document.createElement('style');
+    sty.id = 'radarBtnStyles';
+    sty.textContent = `
+      /* Button baseline look (inherits color from context) */
+      #radarBtn {
+        color: #16a34a; /* classic radar green; change as needed */
+        background: transparent;
+        border: 1px solid currentColor;
+      }
+      #radarBtn svg {
+        display: block;
+        transition: filter .25s ease, opacity .25s ease;
+      }
+      /* Subtle ambient glow element inside the SVG (off by default) */
+      #radarBtn .radar-glow {
+        opacity: 0.15;
+        transition: opacity .25s ease;
+      }
+      /* CSS-only hover glow */
+      #radarBtn:hover svg {
+        filter: drop-shadow(0 0 6px currentColor);
+      }
+      #radarBtn:hover .radar-glow {
+        opacity: 0.35;
+      }
+      /* Optional: keyboard focus glow for accessibility */
+      #radarBtn:focus-visible svg {
+        filter: drop-shadow(0 0 6px currentColor);
+      }
+    `;
+    document.head.appendChild(sty);
+  }
+})();
+
+// Drop-in replacement button creation
+const btn = document.createElement('button');
+btn.id = 'radarBtn';
+btn.title = 'View Weather Radar';
+btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" role="img" aria-label="Radar scope icon (static)"><defs><radialGradient id="rg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.25"/><stop offset="70%" stop-color="currentColor" stop-opacity="0.10"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></radialGradient></defs><g><circle class="radar-glow" cx="12" cy="12" r="11" fill="url(#rg)" stroke="none"></circle><circle cx="12" cy="12" r="11"></circle><circle cx="12" cy="12" r="8" opacity="0.55"></circle><circle cx="12" cy="12" r="5" opacity="0.45"></circle><circle cx="12" cy="12" r="2" opacity="0.35"></circle><line x1="12" y1="1.5" x2="12" y2="22.5" opacity="0.45"></line><line x1="1.5" y1="12" x2="22.5" y2="12" opacity="0.45"></line><g><line x1="12" y1="12" x2="20" y2="9" opacity="0.9"></line><circle cx="16.5" cy="8.5" r="0.9" fill="currentColor" stroke="none"></circle><circle cx="7.3" cy="9.5" r="0.9" fill="currentColor" stroke="none" opacity="0.85"></circle><circle cx="15" cy="15.3" r="0.9" fill="currentColor" stroke="none" opacity="0.85"></circle></g></g></svg>';
+btn.style.display = 'inline-flex';
+btn.style.alignItems = 'center';
+btn.style.justifyContent = 'center';
+btn.style.padding = '4px 8px';
+btn.style.marginLeft = '6px';
+btn.style.borderRadius = '6px';
+btn.style.cursor = 'pointer';
+
+// Append it wherever you need, for example:
+document.body.appendChild(btn);
+
+
+  const rangeToggle = document.getElementById('rangeToggle');
+  if(rangeToggle && rangeToggle.parentNode) {
+    rangeToggle.insertAdjacentElement('afterend', btn);
+  } else {
+    document.body.appendChild(btn);
+  }
+  btn.addEventListener('click', ()=>{
+    if(currentLocationLat === null || currentLocationLon === null){
+      alert('Please select a location first.');
+      return;
+    }
+    const settings = {
+      agenda: {
+        id: "weather",
+        center: [currentLocationLon, currentLocationLat],
+        location: [currentLocationLon, currentLocationLat],
+        zoom: 9.0,
+        layer: "bref_qcd"
+      },
+      animating: false,
+      base: "standard",
+      artcc: false,
+      county: true,
+      cwa: false,
+      rfc: true,
+      state: true,
+      menu: true,
+      shortFusedOnly: false,
+      opacity: {
+        alerts: 0.8,
+        local: 0.6,
+        localStations: 0.8,
+        national: 0.6
+      }
+    };
+    const base64 = btoa(JSON.stringify(settings));
+    const urlSafeBase64 = base64.replace(/=/g, '%3D');
+    window.open(`https://radar.weather.gov/?settings=v1_${urlSafeBase64}`, '_blank');
+  });
+  updateChromeForTheme();
+}
+
 // ======= Day/Night shading helper =======
-function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax){
+function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSunriseSunset){
   try{
     const timesMs = labels.map(t => new Date(t).getTime());
     const perDay = {};
     const idxBefore = (ms) => timesMs.findIndex(t => t > ms) - 1;
-    const roundToNearest = (target, i0) => { if (i0 < 0) return 0; const i1 = Math.min(i0+1, timesMs.length-1); const d0 = Math.abs(target - timesMs[i0]); const d1 = Math.abs(timesMs[i1] - target); return (d1 < d0) ? i1 : i0; };
+    const roundToNearest = (target, i0) => { if (i0 < 0) return 0; const i1 = Math.min(i0+1, timesMs.length-1); const d0 = Math.abs(target - timesMs[i0]); const d1 = Math.abs(timesMs[i1] - target); return (d1 < d0) ? i1 : i0 };
     for (const d of (daily || [])){
       const key = d.date;
       const srMs = new Date(d.sunrise).getTime(); const ssMs = new Date(d.sunset).getTime();
@@ -621,11 +931,13 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax){
       if (isDark){ const xMin = Math.max(srEdge, leftEdge); const xMax = Math.min(ssEdge, rightEdge); if (xMax > xMin) annotations[`day-${key}`] = { type:'box', xScaleID:'x', yScaleID:'yTemp', xMin, xMax, yMin, yMax, backgroundColor: dayColorDark, borderWidth:0 }; }
       else { const preMin = leftEdge; const preMax = Math.min(srEdge, rightEdge); if (preMax > preMin) annotations[`night-pre-${key}`] = { type:'box', xScaleID:'x', yScaleID:'yTemp', xMin: preMin, xMax: preMax, yMin, yMax, backgroundColor: nightColorLight, borderWidth:0 }; const postMin = Math.max(ssEdge, leftEdge); const postMax = rightEdge; if (postMax > postMin) annotations[`night-post-${key}`] = { type:'box', xScaleID:'x', yScaleID:'yTemp', xMin: postMin, xMax: postMax, yMin, yMax, backgroundColor: nightColorLight, borderWidth:0 }; }
     }
-    const amber = 'rgba(245, 158, 11, 0.95)'; const blue  = '#3b82f6';
-    for (const [key, info] of Object.entries(perDay)){
-      const srEdge = info.sunriseIdx - 0.5; const ssEdge = info.sunsetIdx - 0.5;
-      if (info.sunriseIdx>=0 && info.sunriseIdx<labels.length) annotations[`sunrise-${key}`] = { type:'line', xScaleID:'x', yScaleID:'yTemp', xMin: srEdge, xMax: srEdge, borderColor: amber, borderWidth: 1.5, borderDash:[2,2] };
-      if (info.sunsetIdx>=0 && info.sunsetIdx<labels.length) annotations[`sunset-${key}`] = { type:'line', xScaleID:'x', yScaleID:'yTemp', xMin: ssEdge, xMax: ssEdge, borderColor: blue,  borderWidth: 1.5, borderDash:[2,2] };
+    if(showSunriseSunset){
+      const amber = 'rgba(245, 158, 11, 0.95)'; const blue  = '#3b82f6';
+      for (const [key, info] of Object.entries(perDay)){
+        const srEdge = info.sunriseIdx - 0.5; const ssEdge = info.sunsetIdx - 0.5;
+        if (info.sunriseIdx>=0 && info.sunriseIdx<labels.length) annotations[`sunrise-${key}`] = { type:'line', xScaleID:'x', yScaleID:'yTemp', xMin: srEdge, xMax: srEdge, borderColor: amber, borderWidth: 1.5, borderDash:[2,2] };
+        if (info.sunsetIdx>=0 && info.sunsetIdx<labels.length) annotations[`sunset-${key}`] = { type:'line', xScaleID:'x', yScaleID:'yTemp', xMin: ssEdge, xMax: ssEdge, borderColor: blue,  borderWidth: 1.5, borderDash:[2,2] };
+      }
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
