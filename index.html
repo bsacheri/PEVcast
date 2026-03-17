@@ -1,0 +1,110 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Weather Analysis Web App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    window.TEST_MODE_DATA_AVAILABLE = false;
+  </script>
+  <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
+  <script>
+    window.FILE_VERSIONS = { html: '7.12.18', css: '7.12.16', js: '7.12.24' };
+  </script>
+  <script src="app.js" defer></script>
+</head>
+<body class="dark">
+  <header class="app-header">
+    <div class="title-group">
+      <h1 id="appTitle">PEVcast</h1>
+      <div id="cityTitle" class="city-title">Moon Township, PA</div>
+    </div>
+    <div class="controls-group">
+      <select id="quickSelect" class="quick-select" title="Quick Select (sorted west ➜ east)">
+        <option value="" selected>Quick Select</option>
+      </select>
+      <div class="search-group">
+        <input id="cityInput" type="text" placeholder="Enter city or ZIP" />
+        <button id="searchBtn">Search</button>
+      </div>
+      <select id="snowRatio" class="quick-select" title="Snow ratio">
+        <option value="Auto" selected>Snow Ratio: Auto</option>
+        <option value="8">8:1</option>
+        <option value="10">10:1</option>
+        <option value="12">12:1</option>
+        <option value="15">15:1</option>
+      </select>
+      <button id="rangeToggle">Range: 24h</button>
+      <button id="themeToggle">Theme</button>
+      <button id="layoutToggle">Layout: Fit</button>
+      <button id="testModeToggle">Test Mode: Off</button>
+    </div>
+  </header>
+
+  <div id="testModeBanner" class="test-banner hidden">
+    TEST MODE ACTIVE (using static snapshot data)
+  </div>
+
+  <main class="app-main">
+    <section class="summary-box">
+      <div class="summary-left">
+        <div class="summary-item">
+          <span class="summary-label">Total Rain:</span>
+          <span id="totalRain" class="summary-value">0.00"</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Total Snow:</span>
+          <span id="totalSnow" class="summary-value">0.00"</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Estimated Snow (Auto):</span>
+          <span id="estSnow" class="summary-value">0.00"</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Wind Speed:</span>
+          <span id="windRange" class="summary-value">— MPH</span>
+        </div>
+      </div>
+      <div class="summary-right">
+        <span id="sunTimes" class="summary-suntimes">Sunrise: — · Sunset: —</span>
+      </div>
+    </section>
+
+    <section class="chart-container">
+      <div id="chartScroll" class="chart-scroll">
+        <canvas id="weatherChart"></canvas>
+      </div>
+    </section>
+
+    <section class="summary-box" style="margin-top:0.5rem;">
+      <div id="statusLine" class="summary-item">
+        <span class="summary-label">Point:</span>
+        <span class="summary-value">Click a point on the chart...</span>
+      </div>
+    </section>
+  </main>
+
+  <div id="matchModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-sheet">
+      <h2>Select a location</h2>
+      <p>Multiple matches found. Tap/click the correct one:</p>
+      <ul id="matchList"></ul>
+      <button id="matchCancelBtn" class="modal-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <footer class="app-footer">
+    <div id="fileVersions">
+      <span id="ver-html">index.html v7.12.18</span>
+      · <span id="ver-css">styles.css v7.12.16</span>
+      <span id="ver-js">app.js v7.12.24</span>
+    </div>
+  </footer>
+</body>
+</html>
