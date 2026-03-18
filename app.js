@@ -716,10 +716,17 @@ function updateRangeButtonLabel(){
   const btn = $('rangeToggle');
   if(!btn) return;
   if(pastDays === 0){
-    btn.textContent = `Range: ${RANGE_STATES[rangeIndex]}h`;
-    btn.setAttribute('title', `Range: ${RANGE_STATES[rangeIndex]}h | Shift-click or long-press for history`);
+    const rangeState = RANGE_STATES[rangeIndex];
+    let label;
+    if(rangeState === 24) label = 'Range: 24h';
+    else if(rangeState === 72) label = 'Range: 3d';
+    else if(rangeState === 168) label = 'Range: 7d';
+    else if(rangeState === 'max') label = 'Range: 15d';
+    else label = `Range: ${rangeState}h`;
+    btn.textContent = label;
+    btn.setAttribute('title', `${label} | Shift-click or long-press for history`);
   } else {
-    btn.textContent = `-${pastDays}d`;
+    btn.textContent = `Range: -${pastDays}d`;
     btn.setAttribute('title', `${pastDays}d History | Shift-click or long-press to cycle (0 → 3 → 7 → 14 days)`);
   }
 }
@@ -775,6 +782,7 @@ function setupRangeButtonLongPress(){
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const qs=$("quickSelect"); const name=qs?.value||"Moon Township, PA"; const coords=QUICK_SELECT_CITIES[name]||QUICK_SELECT_CITIES["Moon Township, PA"]; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
+  pastDays = 0;
   rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } 
 }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; if(currentDataset) buildChart(currentDataset); }
@@ -851,7 +859,7 @@ function showAboutDialog(){
       <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
       <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>7.12.24</strong></p>
-      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/17/2026 7:54 PM</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/18/2026 2:02 PM</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
