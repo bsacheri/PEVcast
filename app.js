@@ -22,6 +22,9 @@ let TEST_MODE_ENABLED = false;
 let currentDataset = null;
 let currentLocationLat = null; // Current location latitude for radar
 let currentLocationLon = null; // Current location longitude for radar
+let currentCityName = 'Moon Township, PA'; // Current city for reloading with past_days
+let pastDays = 0; // Past days to include (0-92); 0=forecast only, 3/7/14=with history
+const PAST_DAYS_CYCLE = [0, 3, 7, 14]; // Cycle through these values on shift-click
 
 // Range modes: 24h → 72h → 168h → Max → 24h
 const RANGE_STATES = [24, 72, 168, 'max'];
@@ -110,7 +113,7 @@ function resolveLegacyTestData(cityName){
   }catch{ return null; }
 }
 
-async function loadWeatherData(cityName, lat, lon){
+async function loadWeatherData(cityName, lat, lon, pastDaysParam=0){
   if (TEST_MODE_ENABLED){
     const bagData = resolveLegacyTestData(cityName); if (bagData) return bagData;
     const fix = await tryLoadFixture(); if (fix) return fix;
@@ -119,7 +122,7 @@ async function loadWeatherData(cityName, lat, lon){
     }
     throw new Error('Test Mode: No TEST_MODE_DATA / test_data.json / TEST_DATA found.');
   }
-  const apiData = await fetchForecastLive(lat, lon); return buildDataFromLive(apiData);
+  const apiData = await fetchForecastLive(lat, lon, pastDaysParam); return buildDataFromLive(apiData);
 }
 
 // ---------- Open-Meteo live fetch ----------
@@ -128,11 +131,12 @@ async function geocodeCity(query){
   const res = await fetch(url); if (!res.ok) throw new Error('Geocoding failed');
   const data = await res.json(); return data.results || [];
 }
-async function fetchForecastLive(lat, lon){
+async function fetchForecastLive(lat, lon, pastDaysParam=0){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&hourly=temperature_2m,apparent_temperature,precipitation,rain,snowfall,wind_speed_10m,wind_direction_10m,precipitation_probability`
     + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset`
-    + `&timezone=auto&forecast_days=16&wind_speed_unit=mph`;
+    + `&timezone=auto&forecast_days=16&wind_speed_unit=mph`
+    + (pastDaysParam > 0 ? `&past_days=${pastDaysParam}` : '');
   const res = await fetch(url); if (!res.ok) throw new Error('Forecast fetch failed');
   return await res.json();
 }
@@ -276,11 +280,19 @@ function buildChart(dataset){
   const fullHourly = dataset.hourly||[]; const fullLabels = fullHourly.map(h=>h.time); const nowIdxFull = findNowIndex(fullLabels);
   updateSunTimesForNow(dataset.daily||[], fullLabels, nowIdxFull);
 
+  let startIdx, endIdx;
   const rangeState = RANGE_STATES[rangeIndex];
-  const fwd = (rangeState==='max') ? (fullLabels.length - nowIdxFull) : rangeState;
-  const startIdx = Math.max(0, nowIdxFull - 4);
-  const endIdx   = Math.min(fullLabels.length - 1, nowIdxFull + fwd - 1);
-
+  if(pastDays > 0){
+    // When viewing past data, show from start up to NOW (don't show future forecast)
+    startIdx = 0;
+    endIdx = nowIdxFull;
+  } else {
+    // Normal mode: center around "now"
+    const fwd = (rangeState==='max') ? (fullLabels.length - nowIdxFull) : rangeState;
+    startIdx = Math.max(0, nowIdxFull - 4);
+    endIdx   = Math.min(fullLabels.length - 1, nowIdxFull + fwd - 1);
+  }
+  
   const hourly = fullHourly.slice(startIdx, endIdx+1);
   const labels = hourly.map(h=>h.time);
   const temps  = hourly.map(h=>h.temperatureF);
@@ -699,14 +711,76 @@ function showWeatherData(){
   modal.style.display='block';
 }
 
+// ---------- Range button label helper ----------
+function updateRangeButtonLabel(){
+  const btn = $('rangeToggle');
+  if(!btn) return;
+  if(pastDays === 0){
+    btn.textContent = `Range: ${RANGE_STATES[rangeIndex]}h`;
+    btn.setAttribute('title', `Range: ${RANGE_STATES[rangeIndex]}h | Shift-click or long-press for history`);
+  } else {
+    btn.textContent = `-${pastDays}d`;
+    btn.setAttribute('title', `${pastDays}d History | Shift-click or long-press to cycle (0 → 3 → 7 → 14 days)`);
+  }
+}
+
+// ---------- Long-press handler for Range button ----------
+function setupRangeButtonLongPress(){
+  const btn = $('rangeToggle');
+  if(!btn) return;
+  
+  let pressTimer = null;
+  let isLongPress = false;
+  
+  function startPress(){
+    isLongPress = false;
+    pressTimer = setTimeout(()=>{
+      isLongPress = true;
+      handlePastDaysCycle();
+    }, 500);
+  }
+  
+  function endPress(){
+    if(pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+  }
+  
+  async function handlePastDaysCycle(){
+    const nextIndex = (PAST_DAYS_CYCLE.indexOf(pastDays) + 1) % PAST_DAYS_CYCLE.length;
+    pastDays = PAST_DAYS_CYCLE[nextIndex];
+    try{
+      const data = await loadWeatherData(currentCityName, currentLocationLat, currentLocationLon, pastDays);
+      buildChart(data);
+      updateRangeButtonLabel();
+    }catch(e){ console.error('Failed to load past data:', e); }
+  }
+  
+  btn.addEventListener('touchstart', startPress, false);
+  btn.addEventListener('touchend', endPress, false);
+  btn.addEventListener('mousedown', startPress, false);
+  btn.addEventListener('mouseup', endPress, false);
+  btn.addEventListener('click', (evt)=>{
+    if(isLongPress) return;
+    if(evt.shiftKey){
+      handlePastDaysCycle();
+    } else {
+      toggleRange(evt);
+    }
+  }, false);
+}
+
 // ---------- Other UI wiring ----------
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const qs=$("quickSelect"); const name=qs?.value||"Moon Township, PA"; const coords=QUICK_SELECT_CITIES[name]||QUICK_SELECT_CITIES["Moon Township, PA"]; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
-function toggleRange(){ rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ const fullLabels=currentDataset.hourly.map(h=>h.time); const nowIdx=findNowIndex(fullLabels); updateRangeButtonLabel(fullLabels, nowIdx); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } }
+function toggleRange(){
+  rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } 
+}
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; if(currentDataset) buildChart(currentDataset); }
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
 
-async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon); currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
+async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
 
 function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
@@ -716,7 +790,7 @@ function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) 
 `; document.head.appendChild(s); }
 function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'fixed',right:'16px',top:'16px',zIndex:'3002',width:'36px',height:'36px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.body.appendChild(b); }
 
-function updateRangeButtonLabel(fullLabels, nowIdxFull){ const b=$("rangeToggle"); if(!b) return; const state=RANGE_STATES[rangeIndex]; if(state===24) b.textContent='Range: 24h (1 day)'; else if(state===72) b.textContent='Range: 72h (3 day)'; else if(state===168) b.textContent='Range: 168h (7 day)'; else { const remaining=fullLabels&&Number.isInteger(nowIdxFull)?(fullLabels.length-nowIdxFull):0; const days=Math.max(1, Math.ceil(remaining/24)); b.textContent=`Range: Max (${days} day${days!==1?'s':''})`; } }
+
 
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); const entries = Object.entries(QUICK_SELECT_CITIES).sort((a,b)=> a[1].lon - b[1].lon); for (const [name] of entries){ const opt=document.createElement('option'); opt.value=name; opt.textContent=name; select.appendChild(opt); } }
@@ -746,7 +820,8 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
   $("themeToggle")?.addEventListener("click", toggleTheme);
   $("testModeToggle")?.addEventListener("click", toggleTestMode);
-  $("rangeToggle")?.addEventListener("click", toggleRange);
+  setupRangeButtonLongPress();
+  $("rangeToggle")?.setAttribute('title', 'Range: 24h | Long-press for history');
   $("layoutToggle")?.addEventListener("click", toggleLayout);
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
 
@@ -756,8 +831,8 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   currentLocationLon = coords.lon;
   try{
     const data = await loadWeatherData('Moon Township, PA', coords.lat, coords.lon);
-    const fullLabels = data.hourly.map(h=>h.time); const nowIdx=findNowIndex(fullLabels); updateRangeButtonLabel(fullLabels, nowIdx);
     buildChart(data);
+    updateRangeButtonLabel();
   }catch(e){ console.error(e); alert(e?.message||'Failed to load initial data.'); }
 
   window.addEventListener('resize', ()=>{ if(LAYOUT_MODE==='fit' && currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart);}catch{} } });
@@ -776,7 +851,7 @@ function showAboutDialog(){
       <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
       <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>7.12.24</strong></p>
-      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/17/2026 7:23 PM</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/17/2026 7:54 PM</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
