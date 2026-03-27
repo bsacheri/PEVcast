@@ -937,8 +937,8 @@ function showAboutDialog(){
     dialog.innerHTML = `
       <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
       <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
-      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>7.12.24</strong></p>
-      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>03/18/2026 2:02 PM</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>${window.APP_VERSION}</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>${generateCodeUpdateTimestamp()}</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
