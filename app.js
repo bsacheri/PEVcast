@@ -11,7 +11,9 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.29'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+(function(){ try{ window.APP_VERSION='7.12.30'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '03/27/2026 12:00 PM';
+(function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='— Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
 
@@ -896,7 +898,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.29`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.30`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
   populateQuickSelectSorted(); ensureGPSButton();
@@ -940,7 +942,7 @@ function showAboutDialog(){
       <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
       <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>${window.APP_VERSION}</strong></p>
-      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>${generateCodeUpdateTimestamp()}</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>${CODE_UPDATED}</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
