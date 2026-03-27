@@ -69,6 +69,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
     overflow-y:auto !important; 
     z-index:2998 !important;
     backdrop-filter:blur(4px);
+    minWidth:289px !important;
   }
 }
 @media (max-width:480px){

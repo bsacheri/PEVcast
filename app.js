@@ -586,7 +586,7 @@ function ensureAppMenu(){
   Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
 
   const panel=document.createElement('div'); panel.id='appMenuPanel';
-  Object.assign(panel.style,{position:'fixed',right:'16px',top:'56px',zIndex:'2999',minWidth:'304px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
+  Object.assign(panel.style,{position:'fixed',right:'16px',top:'56px',zIndex:'2999',minWidth:'274px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
 
   panel.innerHTML = `
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTheme"> Dark Theme</label>
@@ -803,7 +803,7 @@ function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) 
 // ---------- Button Container (holds Maximize + Menu side-by-side) ----------
 function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'16px',top:'16px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
 
-function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'36px',height:'36px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.getElementById('btnContainer').appendChild(b); }
+function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.getElementById('btnContainer').appendChild(b); }
 
 
 
