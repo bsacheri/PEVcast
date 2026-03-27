@@ -607,6 +607,7 @@ function ensureAppMenu(){
   </div>
   <div style="margin:8px 0 4px 0;font-weight:600;">Wind Display</div>
   <select id="mWind" style="width:100%;margin-bottom:8px"></select>
+  <button id="mCheck" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Check for Updates</button>
   <button id="mData" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Weather Data</button>
   <button id="mAbout" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">About</button>
   `;
@@ -628,12 +629,13 @@ function ensureAppMenu(){
 
   const mWind=$("mWind"); if(mWind){ const windModes=[['off','Off'],['line','Wind Speed Line'],['barbs','Wind Barbs'],['arrows','Wind Arrows'],['overlay','Wind Color Overlay']]; windModes.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; mWind.appendChild(o); }); mWind.value = WIND_DISPLAY_MODE; mWind.addEventListener('change', ()=>{ WIND_DISPLAY_MODE=mWind.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
 
-  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mSunrise=$("mSunrise"), mData=$("mData");
+  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mSunrise=$("mSunrise"), mData=$("mData"), mCheck=$("mCheck");
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
   if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
   if(mSunrise){ mSunrise.checked = SHOW_SUNRISE_SUNSET; mSunrise.addEventListener('change', ()=>{ SHOW_SUNRISE_SUNSET=!SHOW_SUNRISE_SUNSET; if(currentDataset) buildChart(currentDataset); mSunrise.checked=SHOW_SUNRISE_SUNSET; /* keep menu open */ }); }
+  if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
 
   const mAbout=$("mAbout");
@@ -889,13 +891,12 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   
   try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v${""+"7.12.25"}`; } catch(e){ console.warn(e); }
   
-  // Setup update checking
-  $("updateCheckBtn")?.addEventListener("click", checkForUpdates);
-  $("updateReloadBtn")?.addEventListener("click", reloadForUpdate);
-  $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
-  
   installMaximizeStyles(); ensureMaximizeUI(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
   populateQuickSelectSorted(); ensureGPSButton();
+  
+  // Setup update banner button handlers
+  $("updateReloadBtn")?.addEventListener("click", reloadForUpdate);
+  $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
 
   $("quickSelect")?.addEventListener("change", handleQuickSelectChange);
   $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });

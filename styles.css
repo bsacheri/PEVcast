@@ -44,5 +44,39 @@ button { cursor:pointer; border-radius:0.35rem; border:1px solid var(--border-su
 body.light button { background:#f3f4f6; border-color:#d1d5db; }
 input,select { border-radius:0.35rem; border:1px solid var(--border-subtle); background:rgba(17,24,39,0.9); color:inherit; }
 body.light input, body.light select { background:#fff; border-color:#d1d5db; }
-@media (max-width:640px){ .app-header{flex-direction:column; align-items:flex-start; gap:0.5rem;} .controls-group{width:100%; justify-content:flex-start;} .chart-container{height:380px;} .summary-right{min-width:auto;} #appMenuPanel { max-height: 60vh !important; overflow-y: auto !important; } }
+@media (max-width:640px){
+  .app-header{flex-direction:column; align-items:flex-start; gap:0.5rem; padding:0.5rem;}
+  .controls-group{width:100%; justify-content:flex-start; gap:0.3rem; flex-wrap:wrap;}
+  .quick-select, .search-group input, .search-group button, #themeToggle, #testModeToggle, #snowRatio, #layoutToggle { font-size:0.75rem; padding:0.25rem 0.4rem; }
+  .chart-container{height:300px;}
+  .summary-right{min-width:auto; font-size:0.8rem;}
+  .summary-box { flex-direction:column; align-items:flex-start; gap:0.5rem; padding:0.4rem;}
+  .summary-left { gap:0.2rem;}
+  #appMenuBtn { right:10px !important; top:50% !important; transform:translateY(-50%) !important; }
+  #appMenuPanel { 
+    position:fixed !important; 
+    right:0 !important; 
+    top:0 !important; 
+    left:0 !important;
+    bottom:0 !important;
+    width:100% !important; 
+    height:100% !important;
+    max-height:none !important;
+    margin:0 !important;
+    padding:60px 16px 16px 16px !important;
+    border-radius:0 !important;
+    border:none !important;
+    overflow-y:auto !important; 
+    z-index:3001 !important;
+    backdrop-filter:blur(4px);
+  }
+}
+@media (max-width:480px){
+  .app-header { padding:0.4rem; }
+  .title-group h1 { font-size:1rem; }
+  .city-title { font-size:0.75rem; }
+  .chart-container { height:250px; }
+  .summary-item { flex-wrap:wrap; }
+  .summary-label, .summary-value { font-size:0.75rem; }
+}
 .app-footer { margin-top:0.25rem; padding:0.5rem 0.75rem 0.75rem; border-top:1px solid var(--border-subtle); font-size:0.8rem; text-align:center; opacity:0.8; }
