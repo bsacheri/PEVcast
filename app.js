@@ -581,11 +581,12 @@ function updateChromeForTheme(){
 let _menuOutsideHandler=null;
 function ensureAppMenu(){
   if($("appMenuBtn")) return;
+  ensureButtonContainer();
   const btn = document.createElement('button'); btn.id='appMenuBtn'; btn.textContent='☰ Menu';
-  Object.assign(btn.style,{position:'fixed',right:'64px',top:'16px',zIndex:'3000',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
+  Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
 
   const panel=document.createElement('div'); panel.id='appMenuPanel';
-  Object.assign(panel.style,{position:'fixed',right:'64px',top:'56px',zIndex:'3001',minWidth:'304px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
+  Object.assign(panel.style,{position:'fixed',right:'16px',top:'56px',zIndex:'2999',minWidth:'304px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
 
   panel.innerHTML = `
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTheme"> Dark Theme</label>
@@ -617,7 +618,7 @@ function ensureAppMenu(){
 
   btn.addEventListener('click', (ev)=>{ ev.stopPropagation(); const isClosed = (panel.style.display==='none'); if(isClosed) openMenu(); else closeMenu(); });
 
-  document.body.appendChild(btn); document.body.appendChild(panel);
+  document.getElementById('btnContainer').appendChild(btn); document.body.appendChild(panel);
 
   // Populate selects (do not close menu on change)
   const mSnow=$("mSnow"); if(mSnow){ ['Auto','8','10','12','15'].forEach(v=>{ const o=document.createElement('option'); o.value=(v==='Auto'? 'Auto': String(v)); o.textContent=(v==='Auto'? 'Auto':`${v}:1`); mSnow.appendChild(o); }); mSnow.value = snowRatioMode; mSnow.addEventListener('change', ()=>{ snowRatioMode=mSnow.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
@@ -798,7 +799,11 @@ function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) 
   body.maximized .app-main { padding: 0 !important; }
   body.maximized .chart-container { position: fixed !important; inset: 0 !important; z-index: 999 !important; height: 100vh !important; }
 `; document.head.appendChild(s); }
-function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'fixed',right:'16px',top:'16px',zIndex:'3002',width:'36px',height:'36px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.body.appendChild(b); }
+
+// ---------- Button Container (holds Maximize + Menu side-by-side) ----------
+function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'16px',top:'16px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
+
+function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'36px',height:'36px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.getElementById('btnContainer').appendChild(b); }
 
 
 
