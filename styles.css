@@ -63,13 +63,14 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
     height:100% !important;
     max-height:none !important;
     margin:0 !important;
-    padding:60px 16px 16px 16px !important;
+    padding:60px 24px 16px 24px !important;
     border-radius:0 !important;
     border:none !important;
     overflow-y:auto !important; 
     z-index:2998 !important;
     backdrop-filter:blur(4px);
     minWidth:289px !important;
+    box-sizing:border-box !important;
   }
 }
 @media (max-width:480px){
@@ -79,5 +80,6 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
   .chart-container { height:250px; }
   .summary-item { flex-wrap:wrap; }
   .summary-label, .summary-value { font-size:0.75rem; }
+  #appMenuPanel { padding:60px 20px 16px 20px !important; }
 }
 .app-footer { margin-top:0.25rem; padding:0.5rem 0.75rem 0.75rem; border-top:1px solid var(--border-subtle); font-size:0.8rem; text-align:center; opacity:0.8; }
