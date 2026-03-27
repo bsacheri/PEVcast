@@ -5,6 +5,17 @@
   <meta charset="UTF-8" />
   <title>PEVcast</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="14-day weather forecast optimized for personal electric vehicle (PEV) riders. Track rain, snow, wind speed, and freezing conditions." />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PEVcast" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <link rel="manifest" href="manifest.json" />
+  
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" defer crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -14,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.18', css: '7.12.16', js: '7.12.24' };
+    window.FILE_VERSIONS = { html: '7.12.19', css: '7.12.16', js: '7.12.25' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -101,9 +112,9 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.18</span>
+      <span id="ver-html">index.html v7.12.19</span>
       · <span id="ver-css">styles.css v7.12.16</span>
-      <span id="ver-js">app.js v7.12.24</span>
+      <span id="ver-js">app.js v7.12.25</span>
       <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">— Code updated: 03/18/2026 2:02 PM</span>
     </div>
   </footer>

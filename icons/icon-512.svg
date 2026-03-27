@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#1a1a2e" rx="120"/>
+  
+  <!-- Cloud shape -->
+  <g transform="translate(256, 185)">
+    <circle cx="-55" cy="0" r="64" fill="#e8f1f5"/>
+    <circle cx="0" cy="-20" r="74" fill="#e8f1f5"/>
+    <circle cx="55" cy="0" r="64" fill="#e8f1f5"/>
+    <rect x="-120" y="20" width="240" height="55" fill="#e8f1f5"/>
+  </g>
+  
+  <!-- Lightning bolt (electric theme for PEV) -->
+  <g transform="translate(256, 270)">
+    <path d="M 0,-55 L -20,-10 L -5,-10 L 15,40 L -5,40 L -25,95 L 25,-55 Z" fill="#ffb81c" stroke="#ff9d00" stroke-width="2"/>
+  </g>
+  
+  <!-- Text label -->
+  <text x="256" y="430" font-family="Arial, sans-serif" font-size="64" font-weight="bold" text-anchor="middle" fill="#ffffff">PEVcast</text>
+</svg>
