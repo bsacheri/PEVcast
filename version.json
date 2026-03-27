@@ -6,5 +6,5 @@
   "js": "7.12.26",
   "timestamp": "2026-03-26T23:59:59Z",
   "updateAvailable": false,
-  "releaseNotes": "Chart rendering: precipitation bars now drawn behind all other lines for better visibility of temperature and other overlays"
+  "releaseNotes": "UI: Range button moved to top-right control buttons (next to Maximize and Menu)"
 }
