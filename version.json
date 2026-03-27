@@ -1,10 +1,10 @@
 {
   "app": "PEVcast",
-  "version": "7.12.27",
+  "version": "7.12.28",
   "html": "7.12.19",
   "css": "7.12.16",
-  "js": "7.12.27",
+  "js": "7.12.28",
   "timestamp": "2026-03-26T23:59:59Z",
   "updateAvailable": false,
-  "releaseNotes": "UI: Range button moved to top-right control buttons (next to Maximize and Menu)"
+  "releaseNotes": "Chart: add explicit z-order to datasets ensuring precipitation bars render behind all lines"
 }
