@@ -1,10 +1,10 @@
 {
   "app": "PEVcast",
-  "version": "7.12.25",
+  "version": "7.12.26",
   "html": "7.12.19",
   "css": "7.12.16",
-  "js": "7.12.25",
-  "timestamp": "2026-03-26T00:00:00Z",
+  "js": "7.12.26",
+  "timestamp": "2026-03-26T23:59:59Z",
   "updateAvailable": false,
-  "releaseNotes": "PWA support for mobile installation: standalone mode, service worker caching, offline app-shell"
+  "releaseNotes": "Chart rendering: precipitation bars now drawn behind all other lines for better visibility of temperature and other overlays"
 }

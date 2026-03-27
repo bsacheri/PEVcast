@@ -11,7 +11,7 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.25'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+(function(){ try{ window.APP_VERSION='7.12.26'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
 
@@ -370,11 +370,11 @@ function buildChart(dataset){
   const hideChartYAxis = (GRADIENT_MODE==='custom-scale');
 
   const baseDatasets = [
+    { type:'bar', label:'Accumulation', data:scaledPrecip, yAxisID:'yAccum', backgroundColor:barColors, borderColor:barColors.map(()=>"#111827"), borderWidth:1, categoryPercentage:1.0, barPercentage:1.0, hidden: yMin > MIN_TEMP_THRESHOLD_FOR_SNOW },
     { type:'line', label:'Temperature', data:temps, yAxisID:'yTemp', borderColor:'#eab308', backgroundColor:'rgba(234,179,8,0.20)', tension:0.3, pointRadius:2, pointHoverRadius:3,
       datalabels:{ display:(c)=>{ const i=c.dataIndex; const d=labelDates[i]; const fm=firstMinMaxIndexByDay[d]; if(!fm) return false; return i===fm.minIdx || i===fm.maxIdx; }, formatter:(v)=>`${Math.round(v)}°`, align:(c)=>{ const i=c.dataIndex; const fm=firstMinMaxIndexByDay[labelDates[i]]; return (!fm)?'top':(i===fm.minIdx?'bottom':'top'); }, offset:4, color: isDark ? '#e5e7eb' : '#111827', backgroundColor:'rgba(0,0,0,0)', borderWidth:0, clamp:true }
     },
     { type:'line', label:'Feels Like', data:apTemps, yAxisID:'yTemp', borderColor:'#f472b6', backgroundColor:'rgba(244,114,182,0.18)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5, hidden: !APPARENT_OVERLAY_ENABLED },
-    { type:'bar', label:'Accumulation', data:scaledPrecip, yAxisID:'yAccum', backgroundColor:barColors, borderColor:barColors.map(()=>"#111827"), borderWidth:1, categoryPercentage:1.0, barPercentage:1.0, hidden: yMin > MIN_TEMP_THRESHOLD_FOR_SNOW },
     { type:'line', label:'Chance of Precip', data:prob, yAxisID:'yProb', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.26)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5 }
   ];
   
