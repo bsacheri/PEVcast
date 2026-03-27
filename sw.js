@@ -11,6 +11,7 @@ const ASSETS_TO_CACHE = [
   '/app.js',
   '/styles.css',
   '/manifest.json',
+  '/version.json',
   // Chart.js libraries from CDN
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
   'https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js',

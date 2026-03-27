@@ -53,12 +53,19 @@
       <button id="rangeToggle">Range: 24h</button>
       <button id="themeToggle">Theme</button>
       <button id="layoutToggle">Layout: Fit</button>
+      <button id="updateCheckBtn" title="Check for app updates">Check Updates</button>
       <button id="testModeToggle">Test Mode: Off</button>
     </div>
   </header>
 
   <div id="testModeBanner" class="test-banner hidden">
     TEST MODE ACTIVE (using static snapshot data)
+  </div>
+
+  <div id="updateBanner" class="update-banner hidden">
+    <span>A new version of PEVcast is available.</span>
+    <button id="updateReloadBtn" class="update-btn">Update Now</button>
+    <button id="updateDismissBtn" class="update-dismiss-btn">Dismiss</button>
   </div>
 
   <main class="app-main">

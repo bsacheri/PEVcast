@@ -814,6 +814,60 @@ function updateVersionChip(){
   else { chip.style.display='none'; }
 }
 
+// ======= Update Checking =======
+let latestVersionData = null;
+let updateAvailable = false;
+
+async function checkForUpdates(){
+  try {
+    console.log('[Update] Checking for updates...');
+    const response = await fetch('./version.json?cache_bust=' + Date.now());
+    if (!response.ok) throw new Error('Failed to fetch version info');
+    
+    latestVersionData = await response.json();
+    const currentVersion = window.FILE_VERSIONS?.js || 'unknown';
+    const latestVersion = latestVersionData.js;
+    
+    console.log(`[Update] Current: ${currentVersion}, Latest: ${latestVersion}`);
+    
+    if (latestVersion && latestVersion !== currentVersion) {
+      updateAvailable = true;
+      showUpdateBanner();
+      console.log('[Update] Update available!');
+      return true;
+    } else {
+      console.log('[Update] Already on latest version');
+      alert('PEVcast is already up to date!');
+      return false;
+    }
+  } catch (e) {
+    console.error('[Update] Check failed:', e);
+    alert('Failed to check for updates. Please try again.');
+    return false;
+  }
+}
+
+function showUpdateBanner(){
+  const banner = $("updateBanner");
+  if (banner) {
+    banner.classList.remove('hidden');
+    console.log('[Update] Showing update banner');
+  }
+}
+
+function hideUpdateBanner(){
+  const banner = $("updateBanner");
+  if (banner) {
+    banner.classList.add('hidden');
+  }
+}
+
+function reloadForUpdate(){
+  console.log('[Update] Reloading for update...');
+  // Skip service worker cache bypass - reload normally so SW can serve updated assets
+  window.location.reload(true); // Hard reload to bypass cache
+}
+
 // ---------- Boot ----------
 window.addEventListener('DOMContentLoaded', async ()=>{
   // Apply initial theme classes based on localStorage value
@@ -834,6 +888,12 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   }
   
   try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v${""+"7.12.25"}`; } catch(e){ console.warn(e); }
+  
+  // Setup update checking
+  $("updateCheckBtn")?.addEventListener("click", checkForUpdates);
+  $("updateReloadBtn")?.addEventListener("click", reloadForUpdate);
+  $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
+  
   installMaximizeStyles(); ensureMaximizeUI(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
   populateQuickSelectSorted(); ensureGPSButton();
 
