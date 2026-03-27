@@ -585,7 +585,7 @@ function ensureAppMenu(){
   Object.assign(btn.style,{position:'fixed',right:'64px',top:'16px',zIndex:'3000',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
 
   const panel=document.createElement('div'); panel.id='appMenuPanel';
-  Object.assign(panel.style,{position:'fixed',right:'64px',top:'56px',zIndex:'3001',minWidth:'320px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
+  Object.assign(panel.style,{position:'fixed',right:'64px',top:'56px',zIndex:'3001',minWidth:'304px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none'});
 
   panel.innerHTML = `
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTheme"> Dark Theme</label>
@@ -1053,10 +1053,10 @@ document.body.appendChild(btn);
       menu: true,
       shortFusedOnly: false,
       opacity: {
-        alerts: 0.8,
+        alerts: 0.2,
         local: 0.6,
         localStations: 0.8,
-        national: 0.6
+        national: 1.0
       }
     };
     const base64 = btoa(JSON.stringify(settings));
