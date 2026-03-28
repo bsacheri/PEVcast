@@ -1,4 +1,3 @@
-
 // app.js @version 7.12.24
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
@@ -36,6 +35,7 @@ const MAX_WIND_DISPLAY = 40; // Maximum wind speed (mph) displayed at top of cha
 
 let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
+let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 1.2)
 let APPARENT_OVERLAY_ENABLED = false; // default off
 let WIND_DISPLAY_MODE = 'line'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 
@@ -274,7 +274,7 @@ function updateSunTimesForNow(daily, fullLabels, nowIdxFull){ try{ const el=$("s
 
 function calcDayAccum(hourly, idx){ const d=hourly[idx].time.substring(0,10); let sumLiquid=0, sumEstSnow=0; for(let i=0;i<=idx;i++){ if(hourly[i].time.substring(0,10)!==d) continue; const h=hourly[i]; sumLiquid += h.precipIn||0; const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(likely){ const ratio=getSnowRatio(h.temperatureF); sumEstSnow += (h.precipIn||0)*ratio; } } return {liquid:sumLiquid, estSnow:sumEstSnow}; }
 
-function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); if(LAYOUT_MODE==='fit'){ const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.style.height='100%'; } else { container.style.height='420px'; scroller.style.overflowX='auto'; const hours=labels.length, pxPerHour=56; const w=Math.max(scroller.clientWidth, hours*pxPerHour); canvas.style.width=w+'px'; canvas.style.height='100%'; canvas.setAttribute('width', w); } }
+function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); if(LAYOUT_MODE==='fit'){ const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.style.height='100%'; } else { container.style.height='420px'; scroller.style.overflowX='auto'; const hours=labels.length, pxPerHour=56; const scaledPxPerHour = pxPerHour * LAYOUT_SCROLL_SCALE; const w=Math.max(scroller.clientWidth, hours*scaledPxPerHour); canvas.style.width=w+'px'; canvas.style.height='100%'; canvas.setAttribute('width', w); } }
 
 // ---------- Build Chart ----------
 function buildChart(dataset){
@@ -636,7 +636,7 @@ function ensureAppMenu(){
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
-  if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
+  if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); updateScrollScaleVisibility(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
   if(mSunrise){ mSunrise.checked = SHOW_SUNRISE_SUNSET; mSunrise.addEventListener('change', ()=>{ SHOW_SUNRISE_SUNSET=!SHOW_SUNRISE_SUNSET; if(currentDataset) buildChart(currentDataset); mSunrise.checked=SHOW_SUNRISE_SUNSET; /* keep menu open */ }); }
   if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
@@ -703,12 +703,12 @@ function showWeatherData(){
   let html = '<table style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif">';
   // Header row
   html += '<tr><th style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151">Metric</th>';
-  for(const t of cols){ const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; const label=`${mon}/${day} ${h12}${ap}`; html += `<th style=\"padding:6px 8px;border:1px solid #374151;white-space:nowrap\">${label}</th>`; }
+  for(const t of cols){ const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; const label=`${mon}/${day} ${h12}${ap}`; html += `<th style="padding:6px 8px;border:1px solid #374151;white-space:nowrap">${label}</th>`; }
   html += '</tr>';
   // Data rows
   for(const [label, key, fmt] of fields){
-    html += `<tr><td style=\"position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600\">${label}</td>`;
-    for(const h of H){ const v=h[key]; html += `<td style=\"padding:6px 8px;border:1px solid #374151;text-align:right\">${fmt(v)}</td>`; }
+    html += `<tr><td style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600">${label}</td>`;
+    for(const h of H){ const v=h[key]; html += `<td style="padding:6px 8px;border:1px solid #374151;text-align:right">${fmt(v)}</td>`; }
     html += '</tr>';
   }
   html += '</table>';
@@ -790,8 +790,11 @@ function toggleRange(){
   pastDays = 0;
   rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } 
 }
-function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; if(currentDataset) buildChart(currentDataset); }
+function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; updateLayoutButtonLabel(); if(currentDataset) buildChart(currentDataset); }
+function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.textContent = (LAYOUT_MODE==='scroll') ? 'Layout: Scroll' : 'Layout: Fit'; }
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
+function updateScrollScaleVisibility(){ }
+function ensureScrollScaleSlider(){ const slider=$('mainScrollScale'); const valueSpan=$('mainScrollScaleValue'); if(!slider) return; slider.value=String(LAYOUT_SCROLL_SCALE); if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; slider.addEventListener('input', (e)=>{ LAYOUT_SCROLL_SCALE=parseFloat(slider.value)||1.0; if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=true; } if(currentDataset) buildChart(currentDataset); }); updateScrollScaleVisibility(); }
 
 async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
@@ -900,7 +903,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   
   try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.30`; } catch(e){ console.warn(e); }
   
-  installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip();
+  installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton();
   
   // Setup update banner button handlers
