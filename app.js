@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.30'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '03/27/2026 1:43 PM';
+(function(){ try{ window.APP_VERSION='7.12.31'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '03/28/2026 8:29 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='— Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -36,6 +36,7 @@ const MAX_WIND_DISPLAY = 40; // Maximum wind speed (mph) displayed at top of cha
 let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
 let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 1.2)
+let lastClickedIndex = null; // Last clicked chart data index for scroll-centering
 let APPARENT_OVERLAY_ENABLED = false; // default off
 let WIND_DISPLAY_MODE = 'line'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 
@@ -274,7 +275,7 @@ function updateSunTimesForNow(daily, fullLabels, nowIdxFull){ try{ const el=$("s
 
 function calcDayAccum(hourly, idx){ const d=hourly[idx].time.substring(0,10); let sumLiquid=0, sumEstSnow=0; for(let i=0;i<=idx;i++){ if(hourly[i].time.substring(0,10)!==d) continue; const h=hourly[i]; sumLiquid += h.precipIn||0; const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(likely){ const ratio=getSnowRatio(h.temperatureF); sumEstSnow += (h.precipIn||0)*ratio; } } return {liquid:sumLiquid, estSnow:sumEstSnow}; }
 
-function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); if(LAYOUT_MODE==='fit'){ const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.style.height='100%'; } else { container.style.height='420px'; scroller.style.overflowX='auto'; const hours=labels.length, pxPerHour=56; const scaledPxPerHour = pxPerHour * LAYOUT_SCROLL_SCALE; const w=Math.max(scroller.clientWidth, hours*scaledPxPerHour); canvas.style.width=w+'px'; canvas.style.height='100%'; canvas.setAttribute('width', w); } }
+function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(hours*pxPerHour))).toFixed(2)); const slider=$('mainScrollScale'); const valueSpan=$('mainScrollScaleValue'); if(slider){ slider.min=String(fitScale); if(parseFloat(slider.value)<fitScale) slider.value=String(fitScale); } if(LAYOUT_MODE==='fit'){ LAYOUT_SCROLL_SCALE=fitScale; if(slider) slider.value=String(fitScale); if(valueSpan) valueSpan.textContent=fitScale.toFixed(1)+'x'; scroller.style.overflowX='hidden'; canvas.style.width=''; } else { const atMin=LAYOUT_SCROLL_SCALE<=fitScale+0.001; if(atMin){ scroller.style.overflowX='hidden'; canvas.style.width=''; } else { const w=Math.max(scroller.clientWidth, hours*pxPerHour*LAYOUT_SCROLL_SCALE); scroller.style.overflowX=(w<=scroller.clientWidth+1)?'hidden':'auto'; canvas.style.width=w+'px'; canvas.setAttribute('width', w); } if(valueSpan) valueSpan.textContent=LAYOUT_SCROLL_SCALE.toFixed(1)+'x'; } }
 
 // ---------- Build Chart ----------
 function buildChart(dataset){
@@ -312,12 +313,12 @@ function buildChart(dataset){
   const minT=Math.min(...temps.filter(x=>x!=null)), maxT=Math.max(...temps.filter(x=>x!=null));
   const yMin=Math.floor(minT-5); let yMax=Math.ceil(maxT+5); if(maxT<35) yMax=35;
 
-  const maxSnowRate=Math.max(...snow), maxRainRate=Math.max(...rain); const snowScale=2.0, rainScale=1.0; const baseAccumMax=Math.max(maxSnowRate>0?snowScale:0, maxRainRate>0?rainScale:0, 0.1); const accumMax=baseAccumMax/5;
+  const accumMax = 0.40; // Fixed scale: 0.02" rain ≈ 25% height, 0.06" ≈ 75%, consistent across all ranges
 
   // Reduce liquid (green) ~50%; snow unchanged
   const scaledPrecip = precip.map((v,i)=>{ const isLiquid=(temps[i]>32) || (rain[i]>0 && snow[i]===0); const f=isLiquid?0.5:1.0; return (v/accumMax)*f; });
   const scaledWind = wind.map(w => w ? Math.min(w / MAX_WIND_DISPLAY * accumMax, accumMax) : null);
-  let barColors = hourly.map(h=> (h.temperatureF>32 ? '#10b981' : '#60a5fa'));
+  let barColors = hourly.map(h=> (h.temperatureF>32 ? 'rgb(96, 165, 250)' : 'rgb(216, 139, 254)'));
   
   // Wind overlay - change bar color based on wind speed
   if(WIND_DISPLAY_MODE === 'overlay'){
@@ -439,6 +440,7 @@ function buildChart(dataset){
           const windDir = h.windDir ?? "N/A";
           svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}°, Precip: ${h.precipIn.toFixed(2)}", Snow: ${h.snowIn.toFixed(2)}", Rain: ${h.rainIn.toFixed(2)}", Est Snow: ${estHour}", Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}°, Day Accum (Liquid): ${day.liquid.toFixed(2)}", Day Accum (Snow): ${day.estSnow.toFixed(1)}"`;
         }
+        lastClickedIndex = i;
         setCursorAnnotation(chart, labels[i]);
         chart.update();
       },
@@ -551,6 +553,13 @@ function buildChart(dataset){
   // Hover straight line helper
   chart.canvas.addEventListener('mousemove', (evt)=>{ const e=(evt&&evt.native)?evt.native:evt; const pos=Chart.helpers.getRelativePosition(e, chart); const a=chart.chartArea; if(!a || !(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)){ clearHoverAnnotation(chart); chart.update('none'); return; } const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); setHoverAnnotation(chart, labels[i]); chart.update('none'); });
   chart.canvas.addEventListener('mouseleave', ()=>{ clearHoverAnnotation(chart); chart.update('none'); });
+
+  // Re-apply cursor line and re-center scroll if a point was previously selected
+  if(lastClickedIndex !== null && lastClickedIndex < labels.length){
+    setCursorAnnotation(chart, labels[lastClickedIndex]);
+    chart.update('none');
+    scrollToClickedPoint();
+  }
 }
 
 // Hover / Click annotations helpers
@@ -650,7 +659,7 @@ function ensureAppMenu(){
 function reserveRightHeaderSpace(){
   // Prevent overlap behind Menu/Maximize: add right padding to header and center other controls
   const header=document.querySelector('.app-header');
-  if(header){ header.style.paddingRight = '160px'; header.style.position='relative'; header.style.zIndex='100'; }
+  if(header){ header.style.paddingRight = '220px'; header.style.position='relative'; header.style.zIndex='100'; }
   const ctrl = document.querySelector('.header-controls, #headerControls');
   if(ctrl){ ctrl.style.display='flex'; ctrl.style.justifyContent='center'; ctrl.style.alignItems='center'; }
 }
@@ -788,13 +797,15 @@ function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode'
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const qs=$("quickSelect"); const name=qs?.value||"Moon Township, PA"; const coords=QUICK_SELECT_CITIES[name]||QUICK_SELECT_CITIES["Moon Township, PA"]; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
   pastDays = 0;
+  LAYOUT_MODE = 'fit'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=false;
   rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } 
 }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; updateLayoutButtonLabel(); if(currentDataset) buildChart(currentDataset); }
 function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.textContent = (LAYOUT_MODE==='scroll') ? 'Layout: Scroll' : 'Layout: Fit'; }
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
-function ensureScrollScaleSlider(){ const slider=$('mainScrollScale'); const valueSpan=$('mainScrollScaleValue'); if(!slider) return; slider.value=String(LAYOUT_SCROLL_SCALE); if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; slider.addEventListener('input', (e)=>{ LAYOUT_SCROLL_SCALE=parseFloat(slider.value)||1.0; if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=true; } if(currentDataset) buildChart(currentDataset); }); updateScrollScaleVisibility(); }
+function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
+function ensureScrollScaleSlider(){ const slider=$('mainScrollScale'); const valueSpan=$('mainScrollScaleValue'); if(!slider) return; slider.value=String(LAYOUT_SCROLL_SCALE); if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; slider.addEventListener('input', (e)=>{ const parsed=parseFloat(slider.value); LAYOUT_SCROLL_SCALE=isNaN(parsed)?1.0:parsed; if(valueSpan) valueSpan.textContent=(LAYOUT_SCROLL_SCALE).toFixed(1)+'x'; if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=true; } if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
 
 async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
@@ -806,7 +817,7 @@ function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) 
 `; document.head.appendChild(s); }
 
 // ---------- Button Container (holds Maximize + Menu side-by-side) ----------
-function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'16px',top:'16px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
+function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'6px',top:'16px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
 
 function ensureRangeButton(){ const btn=$("rangeToggle"); if(!btn || btn.parentElement?.id==='btnContainer') return; ensureButtonContainer(); const container=document.getElementById('btnContainer'); Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)',fontSize:'0.85rem'}); container.appendChild(btn); }
 
@@ -814,10 +825,24 @@ function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; 
 
 
 
+// ---------- Reverse Geocoding ----------
+async function reverseGeocode(lat, lon){
+  try{
+    const url=`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+    const res=await fetch(url); if(!res.ok) return null;
+    const j=await res.json();
+    const city=j.city||j.locality||j.principalSubdivision||null;
+    const state=j.principalSubdivisionCode?.replace(/^[A-Z]+-/,'')||j.countryCode||null;
+    if(city && state) return `${city}, ${state}`;
+    if(city) return city;
+    return null;
+  }catch(e){ return null; }
+}
+
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); const entries = Object.entries(QUICK_SELECT_CITIES).sort((a,b)=> a[1].lon - b[1].lon); for (const [name] of entries){ const opt=document.createElement('option'); opt.value=name; opt.textContent=name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', ()=>{ if(!navigator.geolocation){ alert('Geolocation not supported by this browser.'); return;} navigator.geolocation.getCurrentPosition(async(pos)=>{ const {latitude:lat, longitude:lon}=pos.coords||{}; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`, {lat, lon}); }, (err)=>{ alert('Unable to get location: '+(err?.message||'Unknown error')); }, {enableHighAccuracy:true, timeout:8000, maximumAge:300000}); }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', ()=>{ if(!navigator.geolocation){ alert('Geolocation not supported by this browser.'); return;} navigator.geolocation.getCurrentPosition(async(pos)=>{ const {latitude:lat, longitude:lon}=pos.coords||{}; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; const resolved=await reverseGeocode(lat, lon); const name=resolved||`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`; await loadCityByName(name, {lat, lon}); }, (err)=>{ alert('Unable to get location: '+(err?.message||'Unknown error')); }, {enableHighAccuracy:true, timeout:8000, maximumAge:300000}); }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -950,6 +975,7 @@ function showAboutDialog(){
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
         <ul style="margin:0 0 16px 0; padding-left:20px; list-style:disc;">
+          <li style="margin:6px 0;"><a href="https://www.bigdatacloud.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">BigDataCloud Reverse Geocoding</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Geolocation</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Forecast</a></li>
           <li style="margin:6px 0;"><a href="https://www.chartjs.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Chart.js v4.4.1</a></li>
@@ -1033,12 +1059,13 @@ btn.style.borderRadius = '6px';
 btn.style.cursor = 'pointer';
 
 // Append it wherever you need, for example:
-document.body.appendChild(btn);
+// document.body.appendChild(btn);
 
 
-  const rangeToggle = document.getElementById('rangeToggle');
-  if(rangeToggle && rangeToggle.parentNode) {
-    rangeToggle.insertAdjacentElement('afterend', btn);
+  const searchBtn = document.getElementById('searchBtn');
+  const searchGroup = searchBtn ? searchBtn.closest('.search-group') : null;
+  if(searchBtn && searchBtn.parentNode) {
+    searchBtn.insertAdjacentElement('afterend', btn);
   } else {
     document.body.appendChild(btn);
   }

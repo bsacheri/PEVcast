@@ -1,10 +1,10 @@
 {
   "app": "PEVcast",
-  "version": "7.12.30",
+  "version": "7.12.31",
   "html": "7.12.19",
-  "css": "7.12.16",
-  "js": "7.12.30",
-  "timestamp": "2026-03-27T00:00:00Z",
+  "css": "7.12.17",
+  "js": "7.12.31",
+  "timestamp": "2026-03-28T20:29:00Z",
   "updateAvailable": false,
-  "releaseNotes": "Fix About dialog always showing fresh timestamp by rebuilding DOM on each open"
+  "releaseNotes": "Radar button next to Search; reverse geocode GPS; city input width fix"
 }
