@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.31'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '03/28/2026 8:29 PM';
+(function(){ try{ window.APP_VERSION='7.12.32'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '03/30/2026 2:05 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='— Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -73,7 +73,33 @@ const QUICK_SELECT_CITIES = {
 };
 
 function $(id){ return document.getElementById(id); }
-function setCityTitle(name){ const el=$("cityTitle"); if(el) el.textContent = name; }
+function setCityTitle(name){ const el=$("cityTitle"); if(!el) return; el.textContent = name; const lat=currentLocationLat, lon=currentLocationLon; if(lat!=null && lon!=null){ el.title=`${lat.toFixed(4)}, ${lon.toFixed(4)}`; el.style.cursor='help'; } else { el.title=''; el.style.cursor=''; } }
+
+function initCityTitleTooltip(){
+  const el=$("cityTitle");
+  if(!el || el.dataset.tooltipWired) return;
+  el.dataset.tooltipWired = '1';
+  let popup = document.getElementById('coordsPopup');
+  if(!popup){ popup=document.createElement('div'); popup.id='coordsPopup'; popup.className='coords-popup hidden'; document.body.appendChild(popup); }
+  let pressTimer=null, hideTimer=null;
+  function showPopup(){
+    const lat=currentLocationLat, lon=currentLocationLon;
+    if(lat==null||lon==null) return;
+    popup.textContent=`${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    clearTimeout(hideTimer);
+    // Position below the city title using fixed coords
+    const r=el.getBoundingClientRect();
+    popup.style.top=(r.bottom+6)+'px';
+    popup.style.left=r.left+'px';
+    popup.classList.remove('hidden');
+    hideTimer=setTimeout(hidePopup, 2500);
+  }
+  function hidePopup(){ popup.classList.add('hidden'); clearTimeout(hideTimer); }
+  el.addEventListener('touchstart',()=>{ clearTimeout(pressTimer); pressTimer=setTimeout(showPopup, 500); },{passive:true});
+  el.addEventListener('touchend',()=>{ clearTimeout(pressTimer); },{passive:true});
+  el.addEventListener('touchmove',()=>{ clearTimeout(pressTimer); },{passive:true});
+  document.addEventListener('touchstart',(e)=>{ if(!popup.classList.contains('hidden')&&e.target!==el&&!popup.contains(e.target)) hidePopup(); },{passive:true});
+}
 
 // ---------- Test Mode data resolution ----------
 async function tryLoadFixture(){
@@ -929,7 +955,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.30`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
-  populateQuickSelectSorted(); ensureGPSButton();
+  populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
   
   // Setup update banner button handlers
   $("updateReloadBtn")?.addEventListener("click", reloadForUpdate);
@@ -948,6 +974,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   const qs=$("quickSelect"); if(qs) qs.value='Moon Township, PA';
   currentLocationLat = coords.lat;
   currentLocationLon = coords.lon;
+  setCityTitle('Moon Township, PA');
   try{
     const data = await loadWeatherData('Moon Township, PA', coords.lat, coords.lon);
     buildChart(data);

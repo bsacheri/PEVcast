@@ -1,10 +1,10 @@
 {
   "app": "PEVcast",
-  "version": "7.12.31",
+  "version": "7.12.32",
   "html": "7.12.19",
   "css": "7.12.17",
-  "js": "7.12.31",
-  "timestamp": "2026-03-28T20:29:00Z",
+  "js": "7.12.32",
+  "timestamp": "2026-03-30T02:05:00Z",
   "updateAvailable": false,
-  "releaseNotes": "Radar button next to Search; reverse geocode GPS; city input width fix"
+  "releaseNotes": "Fix PWA start_url/scope for GitHub Pages; city title lat/lon tooltip with mobile long-press"
 }
