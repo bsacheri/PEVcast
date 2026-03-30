@@ -1,10 +1,10 @@
 {
   "app": "PEVcast",
-  "version": "7.12.32",
+  "version": "7.12.33",
   "html": "7.12.19",
   "css": "7.12.17",
-  "js": "7.12.32",
-  "timestamp": "2026-03-30T02:05:00Z",
+  "js": "7.12.33",
+  "timestamp": "2026-03-30T02:14:00Z",
   "updateAvailable": false,
-  "releaseNotes": "Fix PWA start_url/scope for GitHub Pages; city title lat/lon tooltip with mobile long-press"
+  "releaseNotes": "Fix horizontal scale slider not restoring fit-mode zoom when dragged back to minimum"
 }
