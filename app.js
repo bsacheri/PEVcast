@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.34'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '03/30/2026 2:22 AM';
+(function(){ try{ window.APP_VERSION='7.12.35'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '03/31/2026 11:37 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='— Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -339,13 +339,16 @@ function buildChart(dataset){
   const minT=Math.min(...temps.filter(x=>x!=null)), maxT=Math.max(...temps.filter(x=>x!=null));
   const yMin=Math.floor(minT-5); let yMax=Math.ceil(maxT+5); if(maxT<35) yMax=35;
 
-  const accumMax = 0.40; // Fixed scale: 0.02" rain ≈ 25% height, 0.06" ≈ 75%, consistent across all ranges
+  // Dynamic scaling for accumulation bars: scale to max visible precip, but never less than 0.10 and never more than 0.40
+  let maxPrecip = Math.max(...precip, 0.01);
+  // If all precip is zero, keep a minimum to avoid div by zero
+  let accumMax = Math.max(0.10, Math.min(0.40, maxPrecip * 1.15));
 
   // Reduce liquid (green) ~50%; snow unchanged
   const scaledPrecip = precip.map((v,i)=>{ const isLiquid=(temps[i]>32) || (rain[i]>0 && snow[i]===0); const f=isLiquid?0.5:1.0; return (v/accumMax)*f; });
   const scaledWind = wind.map(w => w ? Math.min(w / MAX_WIND_DISPLAY * accumMax, accumMax) : null);
   let barColors = hourly.map(h=> (h.temperatureF>32 ? 'rgb(96, 165, 250)' : 'rgb(216, 139, 254)'));
-  
+
   // Wind overlay - change bar color based on wind speed
   if(WIND_DISPLAY_MODE === 'overlay'){
     barColors = hourly.map((h,i)=>{ const w = wind[i]; if(w == null) return (h.temperatureF>32 ? '#10b981' : '#60a5fa'); const isLiquid=(temps[i]>32) || (rain[i]>0 && snow[i]===0); const baseColor = h.temperatureF>32 ? '#aef3aa' : '#a5d4ff'; if(w >= 20) return isDark ? '#fe7867' : '#ff5555'; if(w >= 12) return isDark ? '#faa54a' : '#ff9500'; return baseColor; });
@@ -735,19 +738,67 @@ function showWeatherData(){
     ['Wind Dir (°)','windDir',(v)=>v!=null? Math.round(v):'N/A'],
     ['Chance (%)','precipProb',(v)=>v!=null? v:'N/A']
   ];
-  let html = '<table style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif">';
+  // Add Copy button
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button id="copyWeatherDataBtn" style="padding:4px 12px;border-radius:5px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;font-size:13px;">Copy Table</button></div>';
+  html += '<table id="weatherDataTable" style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif">';
   // Header row
   html += '<tr><th style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151">Metric</th>';
-  for(const t of cols){ const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; const label=`${mon}/${day} ${h12}${ap}`; html += `<th style="padding:6px 8px;border:1px solid #374151;white-space:nowrap">${label}</th>`; }
+  cols.forEach((t, colIdx) => {
+    const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; const label=`${mon}/${day} ${h12}${ap}`;
+    html += `<th class="weather-col-header" data-col="${colIdx}" style="padding:6px 8px;border:1px solid #374151;white-space:nowrap;cursor:pointer;user-select:none;">${label}</th>`;
+  });
   html += '</tr>';
   // Data rows
-  for(const [label, key, fmt] of fields){
-    html += `<tr><td style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600">${label}</td>`;
-    for(const h of H){ const v=h[key]; html += `<td style="padding:6px 8px;border:1px solid #374151;text-align:right">${fmt(v)}</td>`; }
+  fields.forEach(([label, key, fmt]) => {
+    html += `<tr>`;
+    html += `<td style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600">${label}</td>`;
+    H.forEach((h, colIdx) => {
+      const v=h[key];
+      html += `<td data-col="${colIdx}" style="padding:6px 8px;border:1px solid #374151;text-align:right">${fmt(v)}</td>`;
+    });
     html += '</tr>';
-  }
+  });
   html += '</table>';
   inner.innerHTML = html;
+
+  // Highlight column on header click
+  const table = inner.querySelector('#weatherDataTable');
+  let lastCol = null;
+  table?.addEventListener('click', function(e) {
+    const th = e.target.closest('.weather-col-header');
+    if (!th) return;
+    const col = th.getAttribute('data-col');
+    // Remove previous highlights
+    table.querySelectorAll('th,td').forEach(cell => cell.style.background = '');
+    // Highlight header
+    th.style.background = '#f59e42';
+    // Highlight all cells in this column
+    table.querySelectorAll(`td[data-col="${col}"]`).forEach(cell => cell.style.background = '#fde68a');
+    lastCol = col;
+  });
+
+  // Copy to clipboard button
+  const copyBtn = inner.querySelector('#copyWeatherDataBtn');
+  copyBtn?.addEventListener('click', function() {
+    // Build tab-separated values for Excel
+    let tsv = '';
+    // Header row
+    tsv += 'Metric\t' + cols.map(t => {
+      const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; return `${mon}/${day} ${h12}${ap}`;
+    }).join('\t') + '\n';
+    // Data rows
+    fields.forEach(([label, key, fmt]) => {
+      tsv += label + '\t' + H.map(h => fmt(h[key])).join('\t') + '\n';
+    });
+    // Copy to clipboard
+    navigator.clipboard.writeText(tsv).then(() => {
+      copyBtn.textContent = 'Copied!';
+      setTimeout(()=>{ copyBtn.textContent = 'Copy Table'; }, 1200);
+    }, () => {
+      copyBtn.textContent = 'Failed';
+      setTimeout(()=>{ copyBtn.textContent = 'Copy Table'; }, 1200);
+    });
+  });
   modal.style.display='block';
 }
 
