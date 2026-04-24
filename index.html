@@ -12,6 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="PEVcast" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="icons/icon-192.svg" />
   <link rel="manifest" href="manifest.json" />
   
@@ -24,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.20', css: '7.12.17', js: '7.12.35' };
+    window.FILE_VERSIONS = { html: '7.12.22', css: '7.12.19', js: '7.12.37' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -35,7 +36,7 @@
       <div id="cityTitle" class="city-title">Moon Township, PA</div>
     </div>
     <div class="controls-group">
-      <select id="quickSelect" class="quick-select" title="Quick Select (sorted west ➜ east)">
+      <select id="quickSelect" class="quick-select" title="Quick Select (sorted west -> east)">
         <option value="" selected>Quick Select</option>
       </select>
       <div class="search-group">
@@ -77,31 +78,31 @@
       <div class="summary-left">
         <div class="summary-item">
           <span class="summary-label">Total Rain:</span>
-          <span id="totalRain" class="summary-value">0.00"</span>
+          <span id="totalRain" class="summary-value">0.0 mm</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Total Snow:</span>
-          <span id="totalSnow" class="summary-value">0.00"</span>
+          <span id="totalSnow" class="summary-value">0.0 mm</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Estimated Snow (Auto):</span>
-          <span id="estSnow" class="summary-value">0.00"</span>
+          <span id="estSnow" class="summary-value">0.0 mm</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Wind Speed:</span>
-          <span id="windRange" class="summary-value">— MPH</span>
+          <span id="windRange" class="summary-value">� MPH</span>
         </div>
       </div>
       <div class="summary-right">
-        <span id="sunTimes" class="summary-suntimes">Sunrise: — · Sunset: —</span>
+        <span id="sunTimes" class="summary-suntimes">Forecast Updated: n/a | Sunrise: n/a | Sunset: n/a</span>
       </div>
     </section>
 
     <div id="scrollScaleControlContainer" style="padding:0.5rem 0.75rem; background:rgba(31,41,55,0.6); border-radius:0.5rem; margin-bottom:0.75rem; border:1px solid rgba(55,65,81,0.5)">
       <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
-        <label style="flex:1;font-size:0.9rem">Horizontal Scale</label>
-        <input type="range" id="mainScrollScale" min="0.0" max="1.0" step="0.1" value="1.0" style="flex:1;cursor:pointer">
-        <span id="mainScrollScaleValue" style="width:40px;text-align:right;font-weight:600;font-size:0.95rem">1.0x</span>
+        <label style="flex:1;font-size:0.9rem">Visible Hours</label>
+        <input type="range" id="mainScrollScale" min="12" max="24" step="1" value="24" style="flex:1;cursor:pointer">
+        <span id="mainScrollScaleValue" style="width:52px;text-align:right;font-weight:600;font-size:0.95rem">24h</span>
       </div>
     </div>
 
@@ -112,9 +113,15 @@
     </section>
 
     <section class="summary-box" style="margin-top:0.5rem;">
-      <div id="statusLine" class="summary-item">
-        <span class="summary-label">Point:</span>
-        <span class="summary-value">Click a point on the chart...</span>
+      <div style="display:flex; flex-direction:column; gap:0.35rem; width:100%;">
+        <div id="statusLine" class="summary-item">
+          <span class="summary-label">Point:</span>
+          <span class="summary-value">Click a point on the chart...</span>
+        </div>
+        <div id="rangeDebugLine" class="summary-item">
+          <span class="summary-label">Range Debug:</span>
+          <span id="rangeDebug" class="summary-value">Waiting for chart data...</span>
+        </div>
       </div>
     </section>
   </main>
@@ -131,12 +138,19 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.20</span>
-      · <span id="ver-css">styles.css v7.12.17</span>
-      <span id="ver-js">app.js v7.12.35</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">— Code updated: 03/31/2026 11:37 PM</span>
+      <span id="ver-html">index.html v7.12.22</span>
+      <span>|</span>
+      <span id="ver-css">styles.css v7.12.19</span>
+      <span>|</span>
+      <span id="ver-js">app.js v7.12.37</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 04/24/2026 5:01 AM</span>
     </div>
   </footer>
 </body>
 </html>
+
+
+
+
+
 

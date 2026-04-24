@@ -1,5 +1,5 @@
 
-/* styles.css @version 7.12.16 */
+/* styles.css @version 7.12.19 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
@@ -22,6 +22,7 @@ body.light .coords-popup { background:rgba(243,244,246,0.97); color:#111827; bor
 .summary-item { display:flex; gap:0.25rem; align-items:baseline; }
 .summary-label { font-size:0.85rem; opacity:0.8; }
 .summary-value { font-weight:600; }
+#rangeDebugLine .summary-value { font-weight:500; font-size:0.85rem; opacity:0.92; }
 .summary-right { margin-left:auto; text-align:right; min-width:240px; }
 .summary-suntimes { font-size:0.9rem; opacity:0.9; }
 .chart-container { position:relative; height:420px; }
@@ -87,3 +88,5 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
   #appMenuPanel { padding:60px 20px 16px 20px !important; }
 }
 .app-footer { margin-top:0.25rem; padding:0.5rem 0.75rem 0.75rem; border-top:1px solid var(--border-subtle); font-size:0.8rem; text-align:center; opacity:0.8; }
+
+

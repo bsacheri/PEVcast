@@ -1,24 +1,22 @@
 // Service Worker for PEVcast PWA
 // Caching strategy: Cache-first for app shell; Network-first for data
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `pevcast-${CACHE_VERSION}`;
 
 // Assets to cache on install (app shell)
 const ASSETS_TO_CACHE = [
-  '/PEVcast/',
-  '/PEVcast/index.html',
-  '/PEVcast/app.js',
-  '/PEVcast/styles.css',
-  '/PEVcast/manifest.json',
-  '/PEVcast/version.json',
-  // Chart.js libraries from CDN
+  '/',
+  '/index.html',
+  '/app.js',
+  '/styles.css',
+  '/manifest.json',
+  '/version.json',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
   'https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js',
   'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js',
-  // Icons
-  '/PEVcast/icons/icon-192.svg',
-  '/PEVcast/icons/icon-512.svg'
+  '/icons/icon-192.svg',
+  '/icons/icon-512.svg'
 ];
 
 // Install event: cache app shell assets

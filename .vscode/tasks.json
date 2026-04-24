@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PEVcast: Version Check",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\bump-version.ps1",
+        "-CheckOnly"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PEVcast: Sync Versions Now",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\bump-version.ps1",
+        "-UseWorkingTree"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PEVcast: Install Git Hooks",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\install-git-hooks.ps1"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

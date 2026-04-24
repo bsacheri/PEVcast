@@ -146,9 +146,25 @@ PEVcast/
   - File headers (`// app.js @version X.X.XX`)
   - HTML version object
   - Console startup message
+- Git hooks now automate version syncing:
+  - `pre-commit` bumps and stages version metadata for changed HTML/CSS/JS assets
+  - `pre-push` validates that version metadata is still in sync
 - Uses vanilla JavaScript (ES6+) with no frameworks
 - Responsive design with CSS custom properties for theming
 - Plugin-based architecture for Chart.js extensibility
+
+### Version Automation
+
+- Run `powershell -ExecutionPolicy Bypass -File .\scripts\install-git-hooks.ps1` once per clone to install the local hooks.
+- `scripts\bump-version.ps1` is the shared source of truth for version updates.
+- The hook treats `app.js`, `sw.js`, `manifest.json`, and `version.json` as part of the JS/app build version bucket.
+
+### VS Code Workflow
+
+- Use `Terminal -> Run Task...` and choose `PEVcast: Version Check` to verify version metadata before a commit.
+- Use `Terminal -> Run Task...` and choose `PEVcast: Sync Versions Now` if you want to update version numbers before staging files.
+- After that, use normal VS Code Source Control for `stage -> commit -> push`.
+- If the hooks are installed, `pre-commit` will bump/sync version metadata automatically and `pre-push` will block an out-of-sync push.
 
 ---
 
