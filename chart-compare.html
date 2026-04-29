@@ -106,6 +106,21 @@
     .legend .temp { color: var(--temp); }
     .legend .prob { color: var(--prob); }
     .legend .rain { color: var(--rain); }
+    .range-controls {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin: 0 0 1rem;
+    }
+    .range-controls button {
+      min-width: 64px;
+      font-weight: 600;
+    }
+    .range-controls button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #04130e;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -188,6 +203,9 @@
     let XAxis;
     let YAxis;
     let ResponsiveLine;
+    let fullRows = [];
+    let currentRangeHours = 24;
+    let reactEnginesLoaded = false;
     const STORAGE_KEY = 'PEVcast.chartCompare.dataset';
     const content = document.getElementById('content');
     const subtitle = document.getElementById('pageSubtitle');
@@ -281,6 +299,11 @@
           <span class="prob">Precipitation probability (%)</span>
           <span class="rain">Rain accumulation (mm)</span>
         </div>
+        <div class="range-controls" aria-label="Chart range">
+          <button type="button" data-range-hours="24">24h</button>
+          <button type="button" data-range-hours="72">72h</button>
+          <button type="button" data-range-hours="168">7d</button>
+        </div>
         <section id="engineGrid" class="grid"></section>
       `;
 
@@ -296,6 +319,49 @@
 
       const grid = document.getElementById('engineGrid');
       engines.forEach(engine => grid.appendChild(engineShell(engine)));
+    }
+
+    function sliceRows(hours) {
+      return fullRows.slice(0, Math.min(hours, fullRows.length));
+    }
+
+    function updateRangeButtons() {
+      document.querySelectorAll('[data-range-hours]').forEach(button => {
+        const hours = Number(button.dataset.rangeHours);
+        button.classList.toggle('active', hours === currentRangeHours);
+        button.disabled = fullRows.length < hours;
+        button.title = button.disabled ? `Only ${fullRows.length} hourly points are available` : '';
+      });
+    }
+
+    async function renderAll(payload, rows) {
+      mountPage(payload, rows);
+      updateRangeButtons();
+      document.querySelectorAll('[data-range-hours]').forEach(button => {
+        button.addEventListener('click', async () => {
+          const hours = Number(button.dataset.rangeHours);
+          if (!hours || hours === currentRangeHours) return;
+          currentRangeHours = hours;
+          await renderAll(payload, sliceRows(currentRangeHours));
+        });
+      });
+      safeRender('chartjsHost', renderChartJs, rows);
+      safeRender('echartsHost', renderECharts, rows);
+      safeRender('highchartsHost', renderHighcharts, rows);
+      safeRender('d3Host', renderD3, rows);
+      safeRender('vegaHost', renderVegaLite, rows);
+      try {
+        if (!reactEnginesLoaded) {
+          await loadReactEngines();
+          reactEnginesLoaded = true;
+        }
+        safeRender('rechartsHost', renderRecharts, rows);
+        safeRender('nivoHost', renderNivo, rows);
+      } catch (error) {
+        console.error('[Chart Compare] React chart engines failed', error);
+        document.getElementById('rechartsHost').innerHTML = '<div class="error">Recharts could not load from the ESM CDN.</div>';
+        document.getElementById('nivoHost').innerHTML = '<div class="error">Nivo could not load from the ESM CDN.</div>';
+      }
     }
 
     function commonAxisOptions() {
@@ -532,22 +598,9 @@
     if (!payload || !Array.isArray(payload.hourly) || payload.hourly.length === 0) {
       showEmpty();
     } else {
-      const rows = prepareRows(payload);
-      mountPage(payload, rows);
-      safeRender('chartjsHost', renderChartJs, rows);
-      safeRender('echartsHost', renderECharts, rows);
-      safeRender('highchartsHost', renderHighcharts, rows);
-      safeRender('d3Host', renderD3, rows);
-      safeRender('vegaHost', renderVegaLite, rows);
-      try {
-        await loadReactEngines();
-        safeRender('rechartsHost', renderRecharts, rows);
-        safeRender('nivoHost', renderNivo, rows);
-      } catch (error) {
-        console.error('[Chart Compare] React chart engines failed', error);
-        document.getElementById('rechartsHost').innerHTML = '<div class="error">Recharts could not load from the ESM CDN.</div>';
-        document.getElementById('nivoHost').innerHTML = '<div class="error">Nivo could not load from the ESM CDN.</div>';
-      }
+      fullRows = prepareRows(payload);
+      currentRangeHours = Math.min(24, fullRows.length);
+      await renderAll(payload, sliceRows(currentRangeHours));
     }
   </script>
 </body>
