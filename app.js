@@ -1,4 +1,4 @@
-// app.js @version 7.12.37
+// app.js @version 7.12.38
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.37'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '04/24/2026 5:01 AM';
+(function(){ try{ window.APP_VERSION='7.12.38'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '04/28/2026 11:00 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -799,14 +799,14 @@ function showWeatherData(){
   const ds=currentDataset; if(!ds||!ds.hourly){ alert('No dataset loaded'); return; }
   const H=ds.hourly; const cols=H.map(h=>h.time);
   const fields=[
-    ['Temp (°F)','temperatureF',(v)=>v!=null? v.toFixed(1):'N/A'],
-    ['Feels Like (°F)','apparentF',(v)=>v!=null? v.toFixed(1):'N/A'],
+    ['Temp (\u00B0F)','temperatureF',(v)=>v!=null? v.toFixed(1):'N/A'],
+    ['Feels Like (\u00B0F)','apparentF',(v)=>v!=null? v.toFixed(1):'N/A'],
     ['Precip (mm)','precipIn',(v)=>v!=null? v.toFixed(1):'0.0'],
     ['Rain (mm)','rainIn',(v)=>v!=null? v.toFixed(1):'0.0'],
     ['Snow (mm)','snowIn',(v)=>v!=null? v.toFixed(1):'0.0'],
     ['Precip Type','precipType',(v)=>v??'none'],
     ['Wind (mph)','windMph',(v)=>v!=null? v.toFixed(1):'N/A'],
-    ['Wind Dir (°)','windDir',(v)=>v!=null? Math.round(v):'N/A'],
+    ['Wind Dir (\u00B0)','windDir',(v)=>v!=null? Math.round(v):'N/A'],
     ['Chance (%)','precipProb',(v)=>v!=null? v:'N/A']
   ];
   // Add Copy button
@@ -964,6 +964,33 @@ function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const val
     if(scroller){ LAYOUT_SCROLL_SCALE=getScaleForVisibleHours(desiredVisibleHours, scroller.clientWidth, pxPerHour); }
     if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
 
+function openChartCompare(){
+  if(!currentDataset || !Array.isArray(currentDataset.hourly) || currentDataset.hourly.length === 0){
+    alert('Load a forecast before opening Chart Compare.');
+    return;
+  }
+  const hourly = currentDataset.hourly.map(h => ({
+    time: h.time,
+    temperatureF: h.temperatureF ?? null,
+    precipProb: h.precipProb ?? null,
+    rainMm: h.rainIn ?? 0,
+    precipitationMm: h.precipIn ?? 0
+  }));
+  const payload = {
+    cityName: currentCityName || $('cityTitle')?.textContent || 'Current forecast',
+    latitude: currentLocationLat,
+    longitude: currentLocationLon,
+    generatedAt: new Date().toISOString(),
+    hourly
+  };
+  try{
+    sessionStorage.setItem('PEVcast.chartCompare.dataset', JSON.stringify(payload));
+    window.location.href = 'chart-compare.html';
+  }catch(e){
+    console.error(e);
+    alert('Unable to open Chart Compare. The forecast dataset could not be saved in this browser session.');
+  }
+}
 async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
 
@@ -1083,7 +1110,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.37`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.38`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1100,6 +1127,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("rangeToggle")?.setAttribute('title', 'Range: 24h | Long-press for history');
   $("layoutToggle")?.addEventListener("click", toggleLayout);
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
+  $("chartCompareBtn")?.addEventListener("click", openChartCompare);
 
   const coords = QUICK_SELECT_CITIES['Moon Township, PA'];
   const qs=$("quickSelect"); if(qs) qs.value='Moon Township, PA';
@@ -1295,6 +1323,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

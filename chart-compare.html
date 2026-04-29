@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PEVcast Chart Compare</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highcharts@11.4.1/highcharts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5.28.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.18.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.25.0"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111827;
+      --panel: #1f2937;
+      --panel-2: #172033;
+      --fg: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #374151;
+      --temp: #f97316;
+      --prob: #38bdf8;
+      --rain: #10b981;
+      --accent: #10b981;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      background: rgba(17, 24, 39, 0.96);
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { margin: 0; font-size: 1.2rem; }
+    .subhead { margin-top: 0.15rem; color: var(--muted); font-size: 0.85rem; }
+    button, a.button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.35rem;
+      background: #111827;
+      color: var(--fg);
+      text-decoration: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.9rem;
+    }
+    main { padding: 1rem; }
+    .empty {
+      max-width: 680px;
+      margin: 12vh auto 0;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--panel);
+    }
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .metric {
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--panel);
+    }
+    .metric span { display: block; color: var(--muted); font-size: 0.78rem; }
+    .metric strong { display: block; margin-top: 0.15rem; font-size: 1.05rem; }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 0 0 1rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 0.75rem;
+      height: 0.75rem;
+      margin-right: 0.35rem;
+      border-radius: 999px;
+      vertical-align: -0.08rem;
+      background: currentColor;
+    }
+    .legend .temp { color: var(--temp); }
+    .legend .prob { color: var(--prob); }
+    .legend .rain { color: var(--rain); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .engine {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .engine-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.75rem;
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+    }
+    .engine h2 { margin: 0; font-size: 1rem; }
+    .engine small { color: var(--muted); }
+    .chart-host {
+      height: 320px;
+      padding: 0.5rem;
+      background: #0f172a;
+    }
+    .chart-host canvas, .chart-host svg { display: block; }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.5rem;
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .notes div { color: var(--muted); }
+    .notes strong { display: block; margin-bottom: 0.15rem; color: var(--fg); font-size: 0.76rem; }
+    .error {
+      padding: 0.75rem;
+      color: #fecaca;
+      font-size: 0.86rem;
+    }
+    @media (max-width: 980px) {
+      .grid, .overview { grid-template-columns: 1fr; }
+      .notes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      header { position: static; align-items: flex-start; flex-direction: column; }
+      main { padding: 0.75rem; }
+      .chart-host { height: 280px; }
+      .notes { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Chart Engine Comparison</h1>
+      <div id="pageSubtitle" class="subhead">Loading forecast dataset...</div>
+    </div>
+    <a class="button" href="index.html">Back to PEVcast</a>
+  </header>
+
+  <main id="content"></main>
+
+  <script type="module">
+
+    let React;
+    let createRoot;
+    let Area;
+    let Bar;
+    let CartesianGrid;
+    let ComposedChart;
+    let Legend;
+    let Line;
+    let ResponsiveContainer;
+    let Tooltip;
+    let XAxis;
+    let YAxis;
+    let ResponsiveLine;
+    const STORAGE_KEY = 'PEVcast.chartCompare.dataset';
+    const content = document.getElementById('content');
+    const subtitle = document.getElementById('pageSubtitle');
+    const colors = {
+      temp: '#f97316',
+      prob: '#38bdf8',
+      rain: '#10b981',
+      grid: 'rgba(148, 163, 184, 0.22)',
+      text: '#d1d5db'
+    };
+
+    function readDataset() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        console.error(error);
+        return null;
+      }
+    }
+
+    function fmtTime(value) {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return value;
+      return d.toLocaleString([], { weekday: 'short', hour: 'numeric' });
+    }
+
+    function prepareRows(payload) {
+      return payload.hourly.map((h, index) => ({
+        index,
+        time: h.time,
+        label: fmtTime(h.time),
+        temperatureF: Number.isFinite(Number(h.temperatureF)) ? Number(h.temperatureF) : null,
+        precipProb: Number.isFinite(Number(h.precipProb)) ? Number(h.precipProb) : 0,
+        rainMm: Number.isFinite(Number(h.rainMm)) ? Number(h.rainMm) : 0
+      }));
+    }
+
+    function range(rows, key, fallback) {
+      const values = rows.map(r => r[key]).filter(v => Number.isFinite(v));
+      return values.length ? [Math.min(...values), Math.max(...values)] : fallback;
+    }
+
+    function showEmpty() {
+      subtitle.textContent = 'No forecast handoff was found for this browser session.';
+      content.innerHTML = `
+        <section class="empty">
+          <h2>No chart data available</h2>
+          <p>Open the main PEVcast page, wait for a forecast to load, then use the Chart Compare button.</p>
+          <a class="button" href="index.html">Back to PEVcast</a>
+        </section>
+      `;
+    }
+
+    function engineShell(engine) {
+      const article = document.createElement('article');
+      article.className = 'engine';
+      article.innerHTML = `
+        <div class="engine-header">
+          <h2>${engine.name}</h2>
+          <small>${engine.kind}</small>
+        </div>
+        <div id="${engine.id}" class="chart-host"></div>
+        <div class="notes">
+          <div><strong>Rendering</strong>${engine.rendering}</div>
+          <div><strong>API</strong>${engine.api}</div>
+          <div><strong>Complexity</strong>${engine.complexity}</div>
+          <div><strong>Static CDN</strong>${engine.staticUse}</div>
+        </div>
+      `;
+      return article;
+    }
+
+    function mountPage(payload, rows) {
+      const generated = payload.generatedAt ? new Date(payload.generatedAt).toLocaleString() : 'unknown';
+      const [tempMin, tempMax] = range(rows, 'temperatureF', [0, 0]);
+      const totalRain = rows.reduce((sum, row) => sum + row.rainMm, 0);
+      const maxProb = Math.max(...rows.map(row => row.precipProb), 0);
+
+      subtitle.textContent = `${payload.cityName || 'Current forecast'} | ${rows.length} hourly points | generated ${generated}`;
+      content.innerHTML = `
+        <section class="overview">
+          <div class="metric"><span>Temperature range</span><strong>${tempMin.toFixed(1)}-${tempMax.toFixed(1)}&deg;F</strong></div>
+          <div class="metric"><span>Max precipitation chance</span><strong>${maxProb.toFixed(0)}%</strong></div>
+          <div class="metric"><span>Total rain accumulation</span><strong>${totalRain.toFixed(1)} mm</strong></div>
+          <div class="metric"><span>Location</span><strong>${payload.latitude?.toFixed?.(3) || 'n/a'}, ${payload.longitude?.toFixed?.(3) || 'n/a'}</strong></div>
+        </section>
+        <div class="legend">
+          <span class="temp">Temperature (&deg;F)</span>
+          <span class="prob">Precipitation probability (%)</span>
+          <span class="rain">Rain accumulation (mm)</span>
+        </div>
+        <section id="engineGrid" class="grid"></section>
+      `;
+
+      const engines = [
+        { id: 'chartjsHost', name: 'Chart.js', kind: 'Canvas', rendering: 'Crisp, familiar mixed line/bar output.', api: 'Straightforward dataset config.', complexity: 'Low for this use case.', staticUse: 'Excellent UMD CDN fit.' },
+        { id: 'echartsHost', name: 'Apache ECharts', kind: 'Canvas', rendering: 'Polished defaults and strong interaction.', api: 'Option object is broad but readable.', complexity: 'Moderate because config is dense.', staticUse: 'Excellent UMD CDN fit.' },
+        { id: 'highchartsHost', name: 'Highcharts', kind: 'SVG', rendering: 'Very refined labels and hover behavior.', api: 'Declarative series and axes.', complexity: 'Low, with license review for production.', staticUse: 'Excellent CDN fit.' },
+        { id: 'd3Host', name: 'D3.js', kind: 'SVG', rendering: 'Maximum control over every mark.', api: 'Imperative and lower level.', complexity: 'Highest because axes/marks are manual.', staticUse: 'Excellent CDN fit.' },
+        { id: 'vegaHost', name: 'Vega-Lite', kind: 'SVG', rendering: 'Clean grammar-driven output.', api: 'Concise visual specification.', complexity: 'Moderate while layering encodings.', staticUse: 'Good with Vega dependencies.' },
+        { id: 'rechartsHost', name: 'Recharts', kind: 'React SVG', rendering: 'Readable React component composition.', api: 'Natural for React apps.', complexity: 'Moderate in static HTML due to module imports.', staticUse: 'Works through ESM CDN.' },
+        { id: 'nivoHost', name: 'Nivo', kind: 'React SVG', rendering: 'Modern styling and responsive behavior.', api: 'Expressive but expects Nivo data shapes.', complexity: 'Moderate-high outside a bundled React app.', staticUse: 'Works through ESM CDN.' }
+      ];
+
+      const grid = document.getElementById('engineGrid');
+      engines.forEach(engine => grid.appendChild(engineShell(engine)));
+    }
+
+    function commonAxisOptions() {
+      return {
+        color: colors.text,
+        grid: { color: colors.grid }
+      };
+    }
+
+    function renderChartJs(rows) {
+      const host = document.getElementById('chartjsHost');
+      host.innerHTML = '<canvas aria-label="Chart.js weather comparison"></canvas>';
+      new Chart(host.querySelector('canvas'), {
+        data: {
+          labels: rows.map(r => r.label),
+          datasets: [
+            { type: 'bar', label: 'Rain mm', data: rows.map(r => r.rainMm), yAxisID: 'rain', backgroundColor: 'rgba(16,185,129,0.55)', borderColor: colors.rain },
+            { type: 'line', label: 'Temp F', data: rows.map(r => r.temperatureF), yAxisID: 'temp', borderColor: colors.temp, backgroundColor: colors.temp, pointRadius: 0, tension: 0.25 },
+            { type: 'line', label: 'Precip %', data: rows.map(r => r.precipProb), yAxisID: 'prob', borderColor: colors.prob, backgroundColor: 'rgba(56,189,248,0.16)', pointRadius: 0, tension: 0.25, fill: true }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { labels: { color: colors.text } } },
+          scales: {
+            x: { ticks: { color: colors.text, maxTicksLimit: 8 }, grid: { color: colors.grid } },
+            temp: { type: 'linear', position: 'left', ticks: commonAxisOptions(), grid: { color: colors.grid } },
+            prob: { type: 'linear', position: 'right', min: 0, max: 100, ticks: commonAxisOptions(), grid: { drawOnChartArea: false } },
+            rain: { type: 'linear', position: 'right', min: 0, ticks: { color: colors.rain }, grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+    }
+
+    function renderECharts(rows) {
+      const chart = echarts.init(document.getElementById('echartsHost'), null, { renderer: 'canvas' });
+      chart.setOption({
+        backgroundColor: 'transparent',
+        color: [colors.rain, colors.temp, colors.prob],
+        tooltip: { trigger: 'axis' },
+        legend: { textStyle: { color: colors.text }, top: 0 },
+        grid: { left: 48, right: 68, top: 42, bottom: 40 },
+        xAxis: { type: 'category', data: rows.map(r => r.label), axisLabel: { color: colors.text }, axisLine: { lineStyle: { color: colors.grid } } },
+        yAxis: [
+          { type: 'value', name: 'F', axisLabel: { color: colors.text }, splitLine: { lineStyle: { color: colors.grid } } },
+          { type: 'value', name: '%', min: 0, max: 100, axisLabel: { color: colors.text }, splitLine: { show: false } },
+          { type: 'value', name: 'mm', offset: 42, axisLabel: { color: colors.rain }, splitLine: { show: false } }
+        ],
+        series: [
+          { name: 'Rain mm', type: 'bar', yAxisIndex: 2, data: rows.map(r => r.rainMm), barWidth: '70%' },
+          { name: 'Temp F', type: 'line', yAxisIndex: 0, showSymbol: false, smooth: true, data: rows.map(r => r.temperatureF) },
+          { name: 'Precip %', type: 'line', yAxisIndex: 1, showSymbol: false, smooth: true, areaStyle: { opacity: 0.14 }, data: rows.map(r => r.precipProb) }
+        ]
+      });
+      window.addEventListener('resize', () => chart.resize());
+    }
+
+    function renderHighcharts(rows) {
+      Highcharts.chart('highchartsHost', {
+        chart: { backgroundColor: 'transparent', style: { fontFamily: 'system-ui, sans-serif' } },
+        title: { text: null },
+        credits: { enabled: false },
+        accessibility: { enabled: false },
+        legend: { itemStyle: { color: colors.text }, itemHoverStyle: { color: '#ffffff' } },
+        xAxis: { categories: rows.map(r => r.label), labels: { style: { color: colors.text } }, tickInterval: Math.ceil(rows.length / 8) },
+        yAxis: [
+          { title: { text: 'F', style: { color: colors.text } }, labels: { style: { color: colors.text } }, gridLineColor: colors.grid },
+          { title: { text: '%', style: { color: colors.prob } }, labels: { style: { color: colors.prob } }, min: 0, max: 100, opposite: true, gridLineWidth: 0 },
+          { title: { text: 'mm', style: { color: colors.rain } }, labels: { style: { color: colors.rain } }, opposite: true, gridLineWidth: 0 }
+        ],
+        tooltip: { shared: true },
+        series: [
+          { type: 'column', name: 'Rain mm', yAxis: 2, data: rows.map(r => r.rainMm), color: 'rgba(16,185,129,0.55)' },
+          { type: 'spline', name: 'Temp F', data: rows.map(r => r.temperatureF), color: colors.temp, marker: { enabled: false } },
+          { type: 'areaspline', name: 'Precip %', yAxis: 1, data: rows.map(r => r.precipProb), color: colors.prob, fillOpacity: 0.14, marker: { enabled: false } }
+        ]
+      });
+    }
+
+    function renderD3(rows) {
+      const host = d3.select('#d3Host');
+      host.selectAll('*').remove();
+      const rect = document.getElementById('d3Host').getBoundingClientRect();
+      const width = Math.max(320, rect.width - 16);
+      const height = 300;
+      const margin = { top: 28, right: 52, bottom: 42, left: 48 };
+      const svg = host.append('svg').attr('width', width).attr('height', height);
+      const innerW = width - margin.left - margin.right;
+      const innerH = height - margin.top - margin.bottom;
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      const x = d3.scaleBand().domain(rows.map(r => r.index)).range([0, innerW]).padding(0.15);
+      const yTemp = d3.scaleLinear().domain(d3.extent(rows, r => r.temperatureF)).nice().range([innerH, 0]);
+      const yPct = d3.scaleLinear().domain([0, 100]).range([innerH, 0]);
+      const yRain = d3.scaleLinear().domain([0, d3.max(rows, r => r.rainMm) || 1]).nice().range([innerH, 0]);
+      const lineTemp = d3.line().defined(d => d.temperatureF != null).x(d => x(d.index) + x.bandwidth() / 2).y(d => yTemp(d.temperatureF));
+      const lineProb = d3.line().x(d => x(d.index) + x.bandwidth() / 2).y(d => yPct(d.precipProb)).curve(d3.curveMonotoneX);
+      const tickEvery = Math.max(1, Math.ceil(rows.length / 7));
+      g.append('g').attr('stroke', colors.grid).selectAll('line').data(yTemp.ticks(5)).join('line').attr('x1', 0).attr('x2', innerW).attr('y1', d => yTemp(d)).attr('y2', d => yTemp(d));
+      g.selectAll('rect').data(rows).join('rect').attr('x', d => x(d.index)).attr('y', d => yRain(d.rainMm)).attr('width', x.bandwidth()).attr('height', d => innerH - yRain(d.rainMm)).attr('fill', 'rgba(16,185,129,0.55)');
+      g.append('path').datum(rows).attr('fill', 'none').attr('stroke', colors.temp).attr('stroke-width', 2).attr('d', lineTemp);
+      g.append('path').datum(rows).attr('fill', 'none').attr('stroke', colors.prob).attr('stroke-width', 2).attr('d', lineProb);
+      g.append('g').attr('transform', `translate(0,${innerH})`).call(d3.axisBottom(x).tickValues(rows.filter(r => r.index % tickEvery === 0).map(r => r.index)).tickFormat(i => rows[i]?.label || '')).selectAll('text').attr('fill', colors.text).attr('transform', 'rotate(-25)').style('text-anchor', 'end');
+      g.append('g').call(d3.axisLeft(yTemp).ticks(5)).selectAll('text').attr('fill', colors.text);
+      g.append('g').attr('transform', `translate(${innerW},0)`).call(d3.axisRight(yPct).ticks(5)).selectAll('text').attr('fill', colors.text);
+      svg.selectAll('.domain,.tick line').attr('stroke', colors.grid);
+    }
+
+    function renderVegaLite(rows) {
+      const maxRain = Math.max(...rows.map(row => row.rainMm), 0.1);
+      const yMax = Math.max(100, ...rows.map(row => row.temperatureF || 0));
+      const values = rows.map(row => ({
+        time: row.time,
+        label: row.label,
+        temperatureF: row.temperatureF,
+        precipProb: row.precipProb,
+        rainMm: row.rainMm,
+        rainPlot: (row.rainMm / maxRain) * Math.min(45, yMax * 0.45)
+      }));
+      vegaEmbed('#vegaHost', {
+        $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+        background: 'transparent',
+        width: 'container',
+        height: 260,
+        data: { values },
+        layer: [
+          {
+            mark: { type: 'bar', opacity: 0.55, color: colors.rain },
+            encoding: {
+              x: { field: 'time', type: 'temporal', axis: { format: '%a %I %p', tickCount: 8, labelColor: colors.text, labelAngle: -45, title: null } },
+              y: { field: 'rainPlot', type: 'quantitative', scale: { domain: [0, yMax] }, axis: { title: 'F / %', labelColor: colors.text, titleColor: colors.text } },
+              tooltip: [
+                { field: 'label', title: 'Time' },
+                { field: 'rainMm', title: 'Rain mm', format: '.2f' }
+              ]
+            }
+          },
+          {
+            mark: { type: 'line', interpolate: 'monotone', color: colors.temp, strokeWidth: 2 },
+            encoding: {
+              x: { field: 'time', type: 'temporal' },
+              y: { field: 'temperatureF', type: 'quantitative' },
+              tooltip: [
+                { field: 'label', title: 'Time' },
+                { field: 'temperatureF', title: 'Temp F', format: '.1f' }
+              ]
+            }
+          },
+          {
+            mark: { type: 'line', interpolate: 'monotone', color: colors.prob, strokeWidth: 2 },
+            encoding: {
+              x: { field: 'time', type: 'temporal' },
+              y: { field: 'precipProb', type: 'quantitative' },
+              tooltip: [
+                { field: 'label', title: 'Time' },
+                { field: 'precipProb', title: 'Precip %', format: '.0f' }
+              ]
+            }
+          }
+        ],
+        config: { axis: { gridColor: colors.grid, domainColor: colors.grid, tickColor: colors.grid }, view: { stroke: null } }
+      }, { actions: false }).catch(error => {
+        console.error('[Chart Compare] Vega-Lite failed', error);
+        document.getElementById('vegaHost').innerHTML = '<div class="error">Vega-Lite could not render this dataset. Check the browser console for details.</div>';
+      });
+    }
+
+    async function loadReactEngines() {
+      const reactModule = await import('https://esm.sh/react@18.2.0');
+      const reactDomModule = await import('https://esm.sh/react-dom@18.2.0/client');
+      const rechartsModule = await import('https://esm.sh/recharts@2.12.7?deps=react@18.2.0,react-dom@18.2.0');
+      const nivoModule = await import('https://esm.sh/@nivo/line@0.85.1?deps=react@18.2.0,react-dom@18.2.0');
+      React = reactModule.default;
+      createRoot = reactDomModule.createRoot;
+      ({ Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } = rechartsModule);
+      ({ ResponsiveLine } = nivoModule);
+    }
+    function renderRecharts(rows) {
+      const root = createRoot(document.getElementById('rechartsHost'));
+      root.render(React.createElement(ResponsiveContainer, { width: '100%', height: '100%' },
+        React.createElement(ComposedChart, { data: rows, margin: { top: 16, right: 42, bottom: 24, left: 0 } },
+          React.createElement(CartesianGrid, { stroke: colors.grid }),
+          React.createElement(XAxis, { dataKey: 'label', tick: { fill: colors.text, fontSize: 11 }, minTickGap: 28 }),
+          React.createElement(YAxis, { yAxisId: 'temp', tick: { fill: colors.text, fontSize: 11 } }),
+          React.createElement(YAxis, { yAxisId: 'prob', orientation: 'right', domain: [0, 100], tick: { fill: colors.prob, fontSize: 11 } }),
+          React.createElement(YAxis, { yAxisId: 'rain', hide: true, domain: [0, 'dataMax'] }),
+          React.createElement(Tooltip, null),
+          React.createElement(Legend, null),
+          React.createElement(Bar, { yAxisId: 'rain', dataKey: 'rainMm', name: 'Rain mm', fill: 'rgba(16,185,129,0.55)' }),
+          React.createElement(Line, { yAxisId: 'temp', dataKey: 'temperatureF', name: 'Temp F', dot: false, stroke: colors.temp, strokeWidth: 2 }),
+          React.createElement(Area, { yAxisId: 'prob', dataKey: 'precipProb', name: 'Precip %', fill: 'rgba(56,189,248,0.16)', stroke: colors.prob, dot: false })
+        )
+      ));
+    }
+
+    function renderNivo(rows) {
+      const data = [
+        { id: 'Temp F', color: colors.temp, data: rows.map(r => ({ x: r.label, y: r.temperatureF })) },
+        { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.label, y: r.precipProb })) },
+        { id: 'Rain mm', color: colors.rain, data: rows.map(r => ({ x: r.label, y: r.rainMm })) }
+      ];
+      const root = createRoot(document.getElementById('nivoHost'));
+      root.render(React.createElement(ResponsiveLine, {
+        data,
+        margin: { top: 26, right: 24, bottom: 54, left: 46 },
+        xScale: { type: 'point' },
+        yScale: { type: 'linear', min: 'auto', max: 'auto', stacked: false },
+        colors: series => series.color,
+        pointSize: 0,
+        enableGridX: false,
+        axisBottom: { tickRotation: -25, tickValues: rows.filter(r => r.index % Math.ceil(rows.length / 6) === 0).map(r => r.label) },
+        theme: { text: { fill: colors.text, fontSize: 11 }, axis: { ticks: { line: { stroke: colors.grid }, text: { fill: colors.text } }, legend: { text: { fill: colors.text } } }, grid: { line: { stroke: colors.grid } }, tooltip: { container: { background: '#111827', color: colors.text } } },
+        legends: [{ anchor: 'top-left', direction: 'row', translateY: -24, itemWidth: 82, itemHeight: 14, symbolSize: 8 }]
+      }));
+    }
+
+    function safeRender(name, renderFn, rows) {
+      try {
+        renderFn(rows);
+      } catch (error) {
+        console.error(`[Chart Compare] ${name} failed`, error);
+        const host = document.getElementById(name);
+        if (host) host.innerHTML = '<div class="error">This engine could not render. Check the browser console for CDN or module details.</div>';
+      }
+    }
+
+    const payload = readDataset();
+    if (!payload || !Array.isArray(payload.hourly) || payload.hourly.length === 0) {
+      showEmpty();
+    } else {
+      const rows = prepareRows(payload);
+      mountPage(payload, rows);
+      safeRender('chartjsHost', renderChartJs, rows);
+      safeRender('echartsHost', renderECharts, rows);
+      safeRender('highchartsHost', renderHighcharts, rows);
+      safeRender('d3Host', renderD3, rows);
+      safeRender('vegaHost', renderVegaLite, rows);
+      try {
+        await loadReactEngines();
+        safeRender('rechartsHost', renderRecharts, rows);
+        safeRender('nivoHost', renderNivo, rows);
+      } catch (error) {
+        console.error('[Chart Compare] React chart engines failed', error);
+        document.getElementById('rechartsHost').innerHTML = '<div class="error">Recharts could not load from the ESM CDN.</div>';
+        document.getElementById('nivoHost').innerHTML = '<div class="error">Nivo could not load from the ESM CDN.</div>';
+      }
+    }
+  </script>
+</body>
+</html>
+
+

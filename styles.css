@@ -1,5 +1,5 @@
 
-/* styles.css @version 7.12.19 */
+/* styles.css @version 7.12.20 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
@@ -89,4 +89,8 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
 }
 .app-footer { margin-top:0.25rem; padding:0.5rem 0.75rem 0.75rem; border-top:1px solid var(--border-subtle); font-size:0.8rem; text-align:center; opacity:0.8; }
 
+
+
+.compare-action { display:flex; justify-content:center; padding:0 0 0.75rem; }
+#chartCompareBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
 

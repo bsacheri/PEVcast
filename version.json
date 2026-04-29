@@ -1,10 +1,10 @@
 {
     "app":  "PEVcast",
-    "version":  "7.12.37",
-    "html":  "7.12.22",
-    "css":  "7.12.19",
-    "js":  "7.12.37",
-    "timestamp":  "2026-04-24T09:01:59Z",
+    "version":  "7.12.38",
+    "html":  "7.12.23",
+    "css":  "7.12.20",
+    "js":  "7.12.38",
+    "timestamp":  "2026-04-29T03:00:00Z",
     "updateAvailable":  false,
     "releaseNotes":  "Auto-synced version metadata for changed files: html, css, js"
 }

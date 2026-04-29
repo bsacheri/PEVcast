@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.22', css: '7.12.19', js: '7.12.37' };
+    window.FILE_VERSIONS = { html: '7.12.23', css: '7.12.20', js: '7.12.38' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -90,7 +90,7 @@
         </div>
         <div class="summary-item">
           <span class="summary-label">Wind Speed:</span>
-          <span id="windRange" class="summary-value">— MPH</span>
+          <span id="windRange" class="summary-value">&mdash; MPH</span>
         </div>
       </div>
       <div class="summary-right">
@@ -124,6 +124,9 @@
         </div>
       </div>
     </section>
+    <section class="compare-action">
+      <button id="chartCompareBtn" type="button">Chart Compare</button>
+    </section>
   </main>
 
   <div id="matchModal" class="modal hidden">
@@ -138,16 +141,17 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.22</span>
+      <span id="ver-html">index.html v7.12.23</span>
       <span>|</span>
-      <span id="ver-css">styles.css v7.12.19</span>
+      <span id="ver-css">styles.css v7.12.20</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.37</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 04/24/2026 5:01 AM</span>
+      <span id="ver-js">app.js v7.12.38</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 04/28/2026 11:00 PM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

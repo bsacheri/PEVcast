@@ -1,13 +1,14 @@
 // Service Worker for PEVcast PWA
 // Caching strategy: Cache-first for app shell; Network-first for data
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `pevcast-${CACHE_VERSION}`;
 
 // Assets to cache on install (app shell)
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
+  '/chart-compare.html',
   '/app.js',
   '/styles.css',
   '/manifest.json',
@@ -78,6 +79,7 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('.png') ||
     url.pathname === '/' ||
     url.pathname === '/index.html' ||
+    url.pathname === '/chart-compare.html' ||
     url.hostname.includes('cdn.jsdelivr.net')
   ) {
     // Cache-first: try cache, fall back to network
