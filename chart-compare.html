@@ -218,6 +218,7 @@
     function prepareRows(payload) {
       return payload.hourly.map((h, index) => ({
         index,
+        xKey: `${String(index).padStart(4, '0')}|${fmtTime(h.time)}`,
         time: h.time,
         label: fmtTime(h.time),
         temperatureF: Number.isFinite(Number(h.temperatureF)) ? Number(h.temperatureF) : null,
@@ -407,8 +408,10 @@
     function renderVegaLite(rows) {
       const maxRain = Math.max(...rows.map(row => row.rainMm), 0.1);
       const yMax = Math.max(100, ...rows.map(row => row.temperatureF || 0));
+      const tickEvery = Math.max(1, Math.ceil(rows.length / 8));
+      const tickKeys = rows.filter(row => row.index % tickEvery === 0).map(row => row.xKey);
       const values = rows.map(row => ({
-        time: row.time,
+        xKey: row.xKey,
         label: row.label,
         temperatureF: row.temperatureF,
         precipProb: row.precipProb,
@@ -425,7 +428,7 @@
           {
             mark: { type: 'bar', opacity: 0.55, color: colors.rain },
             encoding: {
-              x: { field: 'time', type: 'temporal', axis: { format: '%a %I %p', tickCount: 8, labelColor: colors.text, labelAngle: -45, title: null } },
+              x: { field: 'xKey', type: 'ordinal', axis: { values: tickKeys, labelExpr: "split(datum.label, '|')[1]", labelColor: colors.text, labelAngle: -45, title: null } },
               y: { field: 'rainPlot', type: 'quantitative', scale: { domain: [0, yMax] }, axis: { title: 'F / %', labelColor: colors.text, titleColor: colors.text } },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -436,7 +439,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', color: colors.temp, strokeWidth: 2 },
             encoding: {
-              x: { field: 'time', type: 'temporal' },
+              x: { field: 'xKey', type: 'ordinal' },
               y: { field: 'temperatureF', type: 'quantitative' },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -447,7 +450,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', color: colors.prob, strokeWidth: 2 },
             encoding: {
-              x: { field: 'time', type: 'temporal' },
+              x: { field: 'xKey', type: 'ordinal' },
               y: { field: 'precipProb', type: 'quantitative' },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -492,10 +495,12 @@
     }
 
     function renderNivo(rows) {
+      const tickEvery = Math.max(1, Math.ceil(rows.length / 6));
+      const tickValues = rows.filter(r => r.index % tickEvery === 0).map(r => r.xKey);
       const data = [
-        { id: 'Temp F', color: colors.temp, data: rows.map(r => ({ x: r.label, y: r.temperatureF })) },
-        { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.label, y: r.precipProb })) },
-        { id: 'Rain mm', color: colors.rain, data: rows.map(r => ({ x: r.label, y: r.rainMm })) }
+        { id: 'Temp F', color: colors.temp, data: rows.map(r => ({ x: r.xKey, y: r.temperatureF })) },
+        { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.xKey, y: r.precipProb })) },
+        { id: 'Rain mm', color: colors.rain, data: rows.map(r => ({ x: r.xKey, y: r.rainMm })) }
       ];
       const root = createRoot(document.getElementById('nivoHost'));
       root.render(React.createElement(ResponsiveLine, {
@@ -503,10 +508,11 @@
         margin: { top: 26, right: 24, bottom: 54, left: 46 },
         xScale: { type: 'point' },
         yScale: { type: 'linear', min: 'auto', max: 'auto', stacked: false },
+        curve: 'linear',
         colors: series => series.color,
         pointSize: 0,
         enableGridX: false,
-        axisBottom: { tickRotation: -25, tickValues: rows.filter(r => r.index % Math.ceil(rows.length / 6) === 0).map(r => r.label) },
+        axisBottom: { tickRotation: -25, tickValues, format: value => String(value).split('|')[1] || value },
         theme: { text: { fill: colors.text, fontSize: 11 }, axis: { ticks: { line: { stroke: colors.grid }, text: { fill: colors.text } }, legend: { text: { fill: colors.text } } }, grid: { line: { stroke: colors.grid } }, tooltip: { container: { background: '#111827', color: colors.text } } },
         legends: [{ anchor: 'top-left', direction: 'row', translateY: -24, itemWidth: 82, itemHeight: 14, symbolSize: 8 }]
       }));
