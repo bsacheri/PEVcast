@@ -626,6 +626,9 @@
       const [tempMin, tempMax] = tempDomain(rows);
       const selected = selectedIndex('echartsHost', rows);
       chart.setOption({
+        animation: false,
+        animationDuration: 0,
+        animationDurationUpdate: 0,
         backgroundColor: 'transparent',
         color: [colors.rain, colors.temp, colors.prob],
         tooltip: { trigger: 'axis' },
@@ -641,7 +644,7 @@
         grid: { left: 58, right: 68, top: 26, bottom: 40 },
         xAxis: { type: 'category', data: rows.map(r => r.label), axisLabel: { color: colors.text }, axisLine: { lineStyle: { color: colors.grid } } },
         yAxis: [
-          { type: 'value', name: 'F', axisLabel: { color: '#ffffff', fontWeight: 700 }, splitLine: { lineStyle: { color: colors.grid } } },
+          { type: 'value', name: 'F', min: tempMin, max: tempMax, scale: true, axisLabel: { color: '#ffffff', fontWeight: 700 }, splitLine: { lineStyle: { color: colors.grid } } },
           { type: 'value', name: '%', min: 0, max: 100, axisLabel: { color: colors.text }, splitLine: { show: false } },
           { type: 'value', name: 'mm', offset: 42, axisLabel: { color: colors.rain }, splitLine: { show: false } }
         ],
@@ -666,9 +669,9 @@
           }
         ],
         series: [
-          { name: 'Rain mm', type: 'bar', yAxisIndex: 2, data: rows.map(r => r.rainMm), barWidth: '70%' },
-          { name: 'Temp F', type: 'line', yAxisIndex: 0, showSymbol: false, smooth: true, data: rows.map(r => r.temperatureF) },
-          { name: 'Precip %', type: 'line', yAxisIndex: 1, showSymbol: false, smooth: true, areaStyle: { opacity: 0.14 }, data: rows.map(r => r.precipProb) },
+          { name: 'Rain mm', type: 'bar', yAxisIndex: 2, data: rows.map(r => r.rainMm), barWidth: '70%', animation: false },
+          { name: 'Temp F', type: 'line', yAxisIndex: 0, showSymbol: false, smooth: true, data: rows.map(r => r.temperatureF), animation: false },
+          { name: 'Precip %', type: 'line', yAxisIndex: 1, showSymbol: false, smooth: true, areaStyle: { opacity: 0.14 }, data: rows.map(r => r.precipProb), animation: false },
           {
             name: 'Selection',
             type: 'line',
@@ -678,10 +681,11 @@
               lineStyle: { color: colors.cursor, width: 2.5, type: 'dashed' },
               data: [{ xAxis: rows[selected].label }]
             },
-            data: []
+            data: [],
+            animation: false
           }
         ]
-      });
+      }, { notMerge: true, lazyUpdate: false });
       ensureHostAxisGradient('echartsHost', rows);
       chart.getZr().on('click', event => {
         const point = [event.offsetX, event.offsetY];
@@ -700,6 +704,7 @@
       const selected = selectedIndex('highchartsHost', rows);
       Highcharts.chart('highchartsHost', {
         chart: {
+          animation: false,
           backgroundColor: 'transparent',
           style: { fontFamily: 'system-ui, sans-serif' },
           events: {
@@ -717,6 +722,7 @@
         legend: { enabled: false },
         plotOptions: {
           series: {
+            animation: false,
             point: {
               events: {
                 click() {
@@ -1003,10 +1009,10 @@
           React.createElement(YAxis, { yAxisId: 'prob', orientation: 'right', domain: [0, 100], tick: { fill: colors.prob, fontSize: 11 } }),
           React.createElement(YAxis, { yAxisId: 'rain', hide: true, domain: [0, 'dataMax'] }),
           React.createElement(Tooltip, null),
-          React.createElement(Bar, { yAxisId: 'rain', dataKey: 'rainMm', name: 'Rain mm', fill: 'rgba(16,185,129,0.55)' }),
-          selected == null ? null : React.createElement(ReferenceLine, { yAxisId: 'temp', x: rows[selected].label, stroke: colors.cursor, strokeWidth: 2.5, strokeDasharray: '4 3' }),
-          React.createElement(Line, { yAxisId: 'temp', dataKey: 'temperatureF', name: 'Temp F', dot: false, stroke: 'url(#rechartsTempLineGradient)', strokeWidth: 2 }),
-          React.createElement(Area, { yAxisId: 'prob', dataKey: 'precipProb', name: 'Precip %', fill: 'rgba(56,189,248,0.16)', stroke: colors.prob, dot: false })
+          React.createElement(Bar, { yAxisId: 'rain', dataKey: 'rainMm', name: 'Rain mm', fill: 'rgba(16,185,129,0.55)', isAnimationActive: false }),
+          selected == null ? null : React.createElement(ReferenceLine, { yAxisId: 'temp', x: rows[selected].label, stroke: colors.cursor, strokeWidth: 2.5, strokeDasharray: '4 3', isAnimationActive: false }),
+          React.createElement(Line, { yAxisId: 'temp', dataKey: 'temperatureF', name: 'Temp F', dot: false, stroke: 'url(#rechartsTempLineGradient)', strokeWidth: 2, isAnimationActive: false }),
+          React.createElement(Area, { yAxisId: 'prob', dataKey: 'precipProb', name: 'Precip %', fill: 'rgba(56,189,248,0.16)', stroke: colors.prob, dot: false, isAnimationActive: false })
         )
       ));
       ensureHostAxisGradient('rechartsHost', rows);
