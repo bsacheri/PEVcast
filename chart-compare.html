@@ -641,11 +641,28 @@
     function renderNivo(rows) {
       const tickEvery = Math.max(1, Math.ceil(rows.length / 6));
       const tickValues = rows.filter(r => r.index % tickEvery === 0).map(r => r.xKey);
+      const maxRain = Math.max(...rows.map(r => r.rainMm), 0.1);
       const data = [
         { id: 'Temp F', color: colors.temp, data: rows.map(r => ({ x: r.xKey, y: r.temperatureF })) },
-        { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.xKey, y: r.precipProb })) },
-        { id: 'Rain mm', color: colors.rain, data: rows.map(r => ({ x: r.xKey, y: r.rainMm })) }
+        { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.xKey, y: r.precipProb })) }
       ];
+      const rainBarsLayer = ({ xScale, innerHeight, innerWidth }) => {
+        const barWidth = Math.max(1, (innerWidth / Math.max(rows.length, 1)) * 0.65);
+        return React.createElement('g', { key: 'rain-bars' },
+          rows.map(row => {
+            const x = xScale(row.xKey);
+            const h = (row.rainMm / maxRain) * innerHeight * 0.35;
+            return React.createElement('rect', {
+              key: row.xKey,
+              x: (x ?? 0) - barWidth / 2,
+              y: innerHeight - h,
+              width: barWidth,
+              height: h,
+              fill: 'rgba(16,185,129,0.55)'
+            });
+          })
+        );
+      };
       const root = createRoot(document.getElementById('nivoHost'));
       root.render(React.createElement(ResponsiveLine, {
         data,
@@ -656,6 +673,7 @@
         colors: series => series.color,
         pointSize: 0,
         enableGridX: false,
+        layers: ['grid', 'markers', 'axes', rainBarsLayer, 'areas', 'lines', 'points', 'slices', 'mesh', 'legends'],
         axisBottom: { tickRotation: -25, tickValues, format: value => String(value).split('|')[1] || value },
         theme: { text: { fill: colors.text, fontSize: 11 }, axis: { ticks: { line: { stroke: colors.grid }, text: { fill: colors.text } }, legend: { text: { fill: colors.text } } }, grid: { line: { stroke: colors.grid } }, tooltip: { container: { background: '#111827', color: colors.text } } },
         legends: [{ anchor: 'top-left', direction: 'row', translateY: -24, itemWidth: 82, itemHeight: 14, symbolSize: 8 }]
