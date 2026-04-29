@@ -409,9 +409,9 @@
       const maxRain = Math.max(...rows.map(row => row.rainMm), 0.1);
       const yMax = Math.max(100, ...rows.map(row => row.temperatureF || 0));
       const tickEvery = Math.max(1, Math.ceil(rows.length / 8));
-      const tickKeys = rows.filter(row => row.index % tickEvery === 0).map(row => row.xKey);
+      const tickIndices = rows.filter(row => row.index % tickEvery === 0).map(row => row.index);
       const values = rows.map(row => ({
-        xKey: row.xKey,
+        index: row.index,
         label: row.label,
         temperatureF: row.temperatureF,
         precipProb: row.precipProb,
@@ -428,7 +428,7 @@
           {
             mark: { type: 'bar', opacity: 0.55, color: colors.rain },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal', axis: { values: tickKeys, labelExpr: "split(datum.label, '|')[1]", labelColor: colors.text, labelAngle: -45, title: null } },
+              x: { field: 'index', type: 'quantitative', scale: { domain: [0, rows.length - 1] }, axis: { values: tickIndices, labelColor: colors.text, labelAngle: -45, title: null } },
               y: { field: 'rainPlot', type: 'quantitative', scale: { domain: [0, yMax] }, axis: { title: 'F / %', labelColor: colors.text, titleColor: colors.text } },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -439,7 +439,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', color: colors.temp, strokeWidth: 2 },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal' },
+              x: { field: 'index', type: 'quantitative' },
               y: { field: 'temperatureF', type: 'quantitative' },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -450,7 +450,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', color: colors.prob, strokeWidth: 2 },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal' },
+              x: { field: 'index', type: 'quantitative' },
               y: { field: 'precipProb', type: 'quantitative' },
               tooltip: [
                 { field: 'label', title: 'Time' },
