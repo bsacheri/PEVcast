@@ -44,6 +44,10 @@ function Increment-Version([string]$Version) {
   return '{0}.{1}.{2}' -f $parts[0], $parts[1], $patch
 }
 
+function Get-CacheVersion([string]$HtmlVersion, [string]$CssVersion, [string]$JsVersion) {
+  return "vhtml-$HtmlVersion-css-$CssVersion-js-$JsVersion"
+}
+
 function Get-StagedFiles {
   $files = @(git diff --cached --name-only --diff-filter=ACMR)
   return $files | Where-Object { $_ } | ForEach-Object { $_.Trim() }
@@ -59,11 +63,13 @@ function Test-VersionConsistency {
     [string]$IndexHtml,
     [string]$AppJs,
     [string]$StylesCss,
+    [string]$ServiceWorker,
     [string]$VersionJsonText
   )
 
   $versions = Get-VersionMap $IndexHtml
   $versionJson = $VersionJsonText | ConvertFrom-Json
+  $cacheVersion = Get-CacheVersion -HtmlVersion $versions.html -CssVersion $versions.css -JsVersion $versions.js
 
   $checks = @(
     @{ Label = 'index.html footer html version'; Pattern = "id=""ver-html"">index\.html v$([regex]::Escape($versions.html))<" ; Text = $IndexHtml }
@@ -73,6 +79,7 @@ function Test-VersionConsistency {
     @{ Label = 'app.js header version'; Pattern = "(?m)^// app\.js @version $([regex]::Escape($versions.js))$" ; Text = $AppJs }
     @{ Label = 'app.js runtime version'; Pattern = "window\.APP_VERSION='$([regex]::Escape($versions.js))'" ; Text = $AppJs }
     @{ Label = 'app.js footer version'; Pattern = "app\.js v$([regex]::Escape($versions.js))" ; Text = $AppJs }
+    @{ Label = 'sw.js cache version'; Pattern = "const CACHE_VERSION = '$([regex]::Escape($cacheVersion))';" ; Text = $ServiceWorker }
     @{ Label = 'version.json app version'; Pattern = '"version"\s*:\s*"' + [regex]::Escape($versions.js) + '"' ; Text = $VersionJsonText }
     @{ Label = 'version.json js version'; Pattern = '"js"\s*:\s*"' + [regex]::Escape($versions.js) + '"' ; Text = $VersionJsonText }
     @{ Label = 'version.json html version'; Pattern = '"html"\s*:\s*"' + [regex]::Escape($versions.html) + '"' ; Text = $VersionJsonText }
@@ -97,15 +104,17 @@ $repoRoot = Get-RepoRoot
 $indexPath = Join-Path $repoRoot 'index.html'
 $appPath = Join-Path $repoRoot 'app.js'
 $stylesPath = Join-Path $repoRoot 'styles.css'
+$serviceWorkerPath = Join-Path $repoRoot 'sw.js'
 $versionJsonPath = Join-Path $repoRoot 'version.json'
 
 $indexHtml = Get-Text $indexPath
 $appJs = Get-Text $appPath
 $stylesCss = Get-Text $stylesPath
+$serviceWorker = Get-Text $serviceWorkerPath
 $versionJsonText = Get-Text $versionJsonPath
 
 if ($CheckOnly) {
-  $failures = @(Test-VersionConsistency -IndexHtml $indexHtml -AppJs $appJs -StylesCss $stylesCss -VersionJsonText $versionJsonText)
+  $failures = @(Test-VersionConsistency -IndexHtml $indexHtml -AppJs $appJs -StylesCss $stylesCss -ServiceWorker $serviceWorker -VersionJsonText $versionJsonText)
   if ($failures.Count -gt 0) {
     Write-Error ("Version metadata is out of sync:`n - " + ($failures -join "`n - "))
   }
@@ -130,6 +139,7 @@ $versions = Get-VersionMap $indexHtml
 $newHtmlVersion = if ($trackedChanges.html) { Increment-Version $versions.html } else { $versions.html }
 $newCssVersion = if ($trackedChanges.css) { Increment-Version $versions.css } else { $versions.css }
 $newJsVersion = if ($trackedChanges.js) { Increment-Version $versions.js } else { $versions.js }
+$newCacheVersion = Get-CacheVersion -HtmlVersion $newHtmlVersion -CssVersion $newCssVersion -JsVersion $newJsVersion
 
 $localNow = Get-Date
 $codeUpdated = $localNow.ToString('MM/dd/yyyy h:mm tt')
@@ -157,6 +167,8 @@ $appJs = [regex]::Replace($appJs, "window\.APP_VERSION='[^']+'", "window.APP_VER
 $appJs = [regex]::Replace($appJs, "const CODE_UPDATED = '[^']+';", "const CODE_UPDATED = '$codeUpdated';")
 $appJs = [regex]::Replace($appJs, 'app\.js v\d+\.\d+\.\d+', "app.js v$newJsVersion")
 
+$serviceWorker = [regex]::Replace($serviceWorker, "const CACHE_VERSION = 'v[^']+';", "const CACHE_VERSION = '$newCacheVersion';")
+
 $versionJson = $versionJsonText | ConvertFrom-Json
 $versionJson.version = $newJsVersion
 $versionJson.html = $newHtmlVersion
@@ -169,10 +181,11 @@ $newVersionJsonText = ($versionJson | ConvertTo-Json -Depth 5)
 Set-Text $indexPath $indexHtml
 Set-Text $stylesPath $stylesCss
 Set-Text $appPath $appJs
+Set-Text $serviceWorkerPath $serviceWorker
 Set-Text $versionJsonPath $newVersionJsonText
 
 if ($StageUpdatedFiles) {
-  git add -- index.html styles.css app.js version.json | Out-Null
+  git add -- index.html styles.css app.js sw.js version.json | Out-Null
 }
 
 Write-Host "Updated versions -> html: $newHtmlVersion, css: $newCssVersion, js: $newJsVersion"

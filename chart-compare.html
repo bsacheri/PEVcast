@@ -228,6 +228,7 @@
     let CartesianGrid;
     let ComposedChart;
     let Line;
+    let ReferenceArea;
     let ReferenceLine;
     let ResponsiveContainer;
     let Tooltip;
@@ -235,6 +236,7 @@
     let YAxis;
     let ResponsiveLine;
     let fullRows = [];
+    let fullDaily = [];
     let currentRangeHours = 24;
     let reactEnginesLoaded = false;
     const reactRootMap = new WeakMap();
@@ -250,6 +252,9 @@
       prob: '#38bdf8',
       rain: '#10b981',
       cursor: 'rgba(234,179,8,0.92)',
+      dayBand: 'rgba(255,255,255,0.075)',
+      sunrise: 'rgba(245,158,11,0.82)',
+      sunset: 'rgba(59,130,246,0.76)',
       grid: 'rgba(148, 163, 184, 0.22)',
       text: '#d1d5db'
     };
@@ -374,7 +379,7 @@
         .on('click', event => {
           const [x] = d3.pointer(event);
           selectedIndices[hostId] = nearestRowIndex(rows, x / Math.max(1, innerW));
-          rerender(rows);
+          rerender(rows, fullDaily);
         });
     }
 
@@ -393,6 +398,73 @@
         host.prepend(gradient);
       }
       gradient.style.background = gradientCss(rows);
+    }
+
+    function dayNightBands(rows, daily) {
+      if (!Array.isArray(rows) || rows.length === 0 || !Array.isArray(daily)) return [];
+      const times = rows.map(row => new Date(row.time).getTime());
+      const firstEdge = -0.5;
+      const lastEdge = rows.length - 0.5;
+      const edgeForTime = ms => {
+        if (!Number.isFinite(ms)) return null;
+        if (ms <= times[0]) return firstEdge;
+        if (ms >= times[times.length - 1]) return lastEdge;
+        for (let i = 0; i < times.length - 1; i++) {
+          if (ms >= times[i] && ms <= times[i + 1]) {
+            const span = times[i + 1] - times[i] || 1;
+            return i + ((ms - times[i]) / span);
+          }
+        }
+        return null;
+      };
+      return daily.flatMap(day => {
+        const sunriseMs = new Date(day.sunrise).getTime();
+        const sunsetMs = new Date(day.sunset).getTime();
+        const sunriseEdge = edgeForTime(sunriseMs);
+        const sunsetEdge = edgeForTime(sunsetMs);
+        if (sunriseEdge == null || sunsetEdge == null || sunsetEdge <= sunriseEdge) return [];
+        const first = rows.findIndex(row => row.time?.startsWith(day.date));
+        const last = (() => {
+          for (let i = rows.length - 1; i >= 0; i--) if (rows[i].time?.startsWith(day.date)) return i;
+          return -1;
+        })();
+        if (first < 0 || last < 0) return [];
+        const start = Math.max(first - 0.5, sunriseEdge);
+        const end = Math.min(last + 0.5, sunsetEdge);
+        if (end <= start) return [];
+        return [{ date: day.date, start, end, sunrise: sunriseEdge, sunset: sunsetEdge }];
+      });
+    }
+
+    function bandPixel(edge, xScale, rows) {
+      if (!xScale || rows.length === 0) return 0;
+      const clamped = Math.max(-0.5, Math.min(rows.length - 0.5, edge));
+      const lower = Math.max(0, Math.min(rows.length - 1, Math.floor(clamped)));
+      const upper = Math.max(0, Math.min(rows.length - 1, Math.ceil(clamped)));
+      const lowerPx = xScale.getPixelForValue?.(rows[lower].label) ?? xScale(rows[lower].index);
+      const upperPx = xScale.getPixelForValue?.(rows[upper].label) ?? xScale(rows[upper].index);
+      if (lower === upper) {
+        const next = rows[Math.min(rows.length - 1, lower + 1)];
+        const prev = rows[Math.max(0, lower - 1)];
+        const nextPx = xScale.getPixelForValue?.(next.label) ?? xScale(next.index);
+        const prevPx = xScale.getPixelForValue?.(prev.label) ?? xScale(prev.index);
+        const step = Math.max(1, Math.abs(nextPx - prevPx) || 1);
+        return lowerPx + (clamped - lower) * step;
+      }
+      return lowerPx + (upperPx - lowerPx) * (clamped - lower);
+    }
+
+    function addD3DayBands(g, bands, innerH, xForEdge) {
+      g.selectAll('.day-band')
+        .data(bands)
+        .join('rect')
+        .attr('class', 'day-band')
+        .attr('x', band => xForEdge(band.start))
+        .attr('y', 0)
+        .attr('width', band => Math.max(0, xForEdge(band.end) - xForEdge(band.start)))
+        .attr('height', innerH)
+        .attr('fill', colors.dayBand)
+        .attr('pointer-events', 'none');
     }
 
     function readDataset() {
@@ -518,18 +590,19 @@
           await renderAll(payload, sliceRows(currentRangeHours));
         });
       });
-      safeRender('chartjsHost', renderChartJs, rows);
-      safeRender('echartsHost', renderECharts, rows);
-      safeRender('highchartsHost', renderHighcharts, rows);
-      safeRender('d3Host', renderD3, rows);
-      safeRender('vegaHost', renderVegaLite, rows);
+      const daily = payload.daily || [];
+      safeRender('chartjsHost', renderChartJs, rows, daily);
+      safeRender('echartsHost', renderECharts, rows, daily);
+      safeRender('highchartsHost', renderHighcharts, rows, daily);
+      safeRender('d3Host', renderD3, rows, daily);
+      safeRender('vegaHost', renderVegaLite, rows, daily);
       try {
         if (!reactEnginesLoaded) {
           await loadReactEngines();
           reactEnginesLoaded = true;
         }
-        safeRender('rechartsHost', renderRecharts, rows);
-        safeRender('nivoHost', renderNivo, rows);
+        safeRender('rechartsHost', renderRecharts, rows, daily);
+        safeRender('nivoHost', renderNivo, rows, daily);
       } catch (error) {
         console.error('[Chart Compare] React chart engines failed', error);
         document.getElementById('rechartsHost').innerHTML = '<div class="error">Recharts could not load from the ESM CDN.</div>';
@@ -551,6 +624,16 @@
         const y = chart.scales.temp;
         if (!area || !y) return;
         const ctx = chart.ctx;
+        if (opts?.rows && opts?.daily) {
+          ctx.save();
+          ctx.fillStyle = colors.dayBand;
+          dayNightBands(opts.rows, opts.daily).forEach(band => {
+            const x1 = bandPixel(band.start, chart.scales.x, opts.rows);
+            const x2 = bandPixel(band.end, chart.scales.x, opts.rows);
+            ctx.fillRect(x1, area.top, Math.max(0, x2 - x1), area.bottom - area.top);
+          });
+          ctx.restore();
+        }
         const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
         tempColorStops(y.min, y.max).forEach(([offset, color]) => gradient.addColorStop(1 - offset, color));
         ctx.save();
@@ -580,7 +663,7 @@
     };
     Chart.register(chartJsComparePlugin);
 
-    function renderChartJs(rows) {
+    function renderChartJs(rows, daily) {
       const host = document.getElementById('chartjsHost');
       host.innerHTML = '<canvas aria-label="Chart.js weather comparison"></canvas>';
       ensureHostAxisGradient('chartjsHost', rows);
@@ -606,7 +689,7 @@
           },
           plugins: {
             legend: { display: false },
-            chartCompareGradientAndSelection: { hostId: 'chartjsHost', rows }
+            chartCompareGradientAndSelection: { hostId: 'chartjsHost', rows, daily }
           },
           scales: {
             x: { ticks: { color: colors.text, maxTicksLimit: 8 }, grid: { color: colors.grid } },
@@ -619,12 +702,13 @@
       return chart;
     }
 
-    function renderECharts(rows) {
+    function renderECharts(rows, daily) {
       const host = document.getElementById('echartsHost');
       echarts.getInstanceByDom(host)?.dispose();
       const chart = echarts.init(host, null, { renderer: 'canvas' });
       const [tempMin, tempMax] = tempDomain(rows);
       const selected = selectedIndex('echartsHost', rows);
+      const bands = dayNightBands(rows, daily);
       chart.setOption({
         animation: false,
         animationDuration: 0,
@@ -669,7 +753,22 @@
           }
         ],
         series: [
-          { name: 'Rain mm', type: 'bar', yAxisIndex: 2, data: rows.map(r => r.rainMm), barWidth: '70%', animation: false },
+          {
+            name: 'Rain mm',
+            type: 'bar',
+            yAxisIndex: 2,
+            data: rows.map(r => r.rainMm),
+            barWidth: '70%',
+            animation: false,
+            markArea: {
+              silent: true,
+              itemStyle: { color: colors.dayBand },
+              data: bands.map(band => [
+                { xAxis: rows[Math.max(0, Math.min(rows.length - 1, Math.ceil(band.start)))].label },
+                { xAxis: rows[Math.max(0, Math.min(rows.length - 1, Math.floor(band.end)))].label }
+              ])
+            }
+          },
           { name: 'Temp F', type: 'line', yAxisIndex: 0, showSymbol: false, smooth: true, data: rows.map(r => r.temperatureF), animation: false },
           { name: 'Precip %', type: 'line', yAxisIndex: 1, showSymbol: false, smooth: true, areaStyle: { opacity: 0.14 }, data: rows.map(r => r.precipProb), animation: false },
           {
@@ -694,14 +793,15 @@
         const label = Array.isArray(value) ? value[0] : value;
         const index = typeof label === 'number' ? Math.round(label) : rows.findIndex(row => row.label === label);
         selectedIndices.echartsHost = Math.max(0, Math.min(rows.length - 1, index));
-        renderECharts(rows);
+        renderECharts(rows, daily);
       });
       window.addEventListener('resize', () => chart.resize());
     }
 
-    function renderHighcharts(rows) {
+    function renderHighcharts(rows, daily) {
       const [tempMin, tempMax] = tempDomain(rows);
       const selected = selectedIndex('highchartsHost', rows);
+      const bands = dayNightBands(rows, daily);
       Highcharts.chart('highchartsHost', {
         chart: {
           animation: false,
@@ -712,7 +812,7 @@
               const value = event.xAxis?.[0]?.value;
               if (!Number.isFinite(value)) return;
               selectedIndices.highchartsHost = Math.max(0, Math.min(rows.length - 1, Math.round(value)));
-              renderHighcharts(rows);
+              renderHighcharts(rows, daily);
             }
           }
         },
@@ -727,13 +827,18 @@
               events: {
                 click() {
                   selectedIndices.highchartsHost = this.index;
-                  renderHighcharts(rows);
+                  renderHighcharts(rows, daily);
                 }
               }
             }
           }
         },
-        xAxis: { categories: rows.map(r => r.label), labels: { style: { color: colors.text } }, tickInterval: Math.ceil(rows.length / 8) },
+        xAxis: {
+          categories: rows.map(r => r.label),
+          labels: { style: { color: colors.text } },
+          tickInterval: Math.ceil(rows.length / 8),
+          plotBands: bands.map(band => ({ from: band.start, to: band.end, color: colors.dayBand, borderWidth: 0 }))
+        },
         yAxis: [
           {
             title: { text: 'F', style: { color: '#ffffff' } },
@@ -762,7 +867,7 @@
       });
     }
 
-    function renderD3(rows) {
+    function renderD3(rows, daily) {
       const host = d3.select('#d3Host');
       host.selectAll('*').remove();
       const rect = document.getElementById('d3Host').getBoundingClientRect();
@@ -783,7 +888,9 @@
       const yRain = d3.scaleLinear().domain([0, d3.max(rows, r => r.rainMm) || 1]).nice().range([innerH, 0]);
       const lineTemp = d3.line().defined(d => d.temperatureF != null).x(d => x(d.index) + x.bandwidth() / 2).y(d => yTemp(d.temperatureF));
       const lineProb = d3.line().x(d => x(d.index) + x.bandwidth() / 2).y(d => yPct(d.precipProb)).curve(d3.curveMonotoneX);
+      const xEdge = d3.scaleLinear().domain([-0.5, rows.length - 0.5]).range([0, innerW]);
       const tickEvery = Math.max(1, Math.ceil(rows.length / 7));
+      addD3DayBands(g, dayNightBands(rows, daily), innerH, edge => xEdge(edge));
       g.append('g').attr('stroke', colors.grid).selectAll('line').data(yTemp.ticks(5)).join('line').attr('x1', 0).attr('x2', innerW).attr('y1', d => yTemp(d)).attr('y2', d => yTemp(d));
       g.selectAll('rect').data(rows).join('rect').attr('x', d => x(d.index)).attr('y', d => yRain(d.rainMm)).attr('width', x.bandwidth()).attr('height', d => innerH - yRain(d.rainMm)).attr('fill', 'rgba(16,185,129,0.55)');
       addSvgGradient(svg, lineGradientId, tempMin, tempMax);
@@ -798,7 +905,7 @@
       ensureHostAxisGradient('d3Host', rows);
     }
 
-    function renderVegaLite(rows) {
+    function renderVegaLite(rows, daily) {
       const host = document.getElementById('vegaHost');
       host.innerHTML = '';
       const rect = host.getBoundingClientRect();
@@ -808,8 +915,13 @@
       const maxRain = Math.max(...rows.map(row => row.rainMm), 0.1);
       const yMax = Math.max(100, ...rows.map(row => row.temperatureF || 0));
       const tickEvery = Math.max(1, Math.ceil(rows.length / 6));
-      const tickKeys = rows.filter(row => row.index % tickEvery === 0).map(row => row.xKey);
-      const selected = selectedXKey('vegaHost', rows);
+      const tickIndices = rows.filter(row => row.index % tickEvery === 0).map(row => row.index);
+      const selected = selectedIndex('vegaHost', rows);
+      const labelExpr = `${JSON.stringify(Object.fromEntries(rows.map(row => [row.index, row.label])))}[datum.value] || ''`;
+      const bands = dayNightBands(rows, daily).map(band => ({
+        start: band.start,
+        end: band.end
+      }));
       const values = rows.map(row => ({
         index: row.index,
         xKey: row.xKey,
@@ -829,9 +941,19 @@
         data: { values },
         layer: [
           {
+            data: { values: bands },
+            mark: { type: 'rect', color: colors.dayBand },
+            encoding: {
+              x: { field: 'start', type: 'quantitative', scale: { domain: [-0.5, rows.length - 0.5] } },
+              x2: { field: 'end' },
+              y: { value: 0 },
+              y2: { value: height }
+            }
+          },
+          {
             mark: { type: 'bar', opacity: 0.55, color: colors.rain },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal', axis: { values: tickKeys, labelExpr: "datum.label.substring(5)", labelColor: colors.text, labelAngle: -25, labelFontSize: 11, title: null } },
+              x: { field: 'index', type: 'quantitative', scale: { domain: [-0.5, rows.length - 0.5] }, axis: { values: tickIndices, labelExpr, labelColor: colors.text, labelAngle: -25, labelFontSize: 11, title: null } },
               y: { field: 'rainPlot', type: 'quantitative', scale: { domain: [0, yMax] }, axis: { title: null, labelColor: colors.text, labelFontSize: 11, tickCount: 5 } },
               tooltip: [
                 { field: 'label', title: 'Time' },
@@ -842,7 +964,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', strokeWidth: 2 },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal' },
+              x: { field: 'index', type: 'quantitative' },
               y: { field: 'temperatureF', type: 'quantitative' },
               color: { value: tempColor(rows[Math.floor(rows.length / 2)]?.temperatureF) },
               tooltip: [
@@ -854,7 +976,7 @@
           {
             mark: { type: 'line', interpolate: 'monotone', strokeWidth: 2 },
             encoding: {
-              x: { field: 'xKey', type: 'ordinal' },
+              x: { field: 'index', type: 'quantitative' },
               y: { field: 'precipProb', type: 'quantitative' },
               color: { value: colors.prob },
               tooltip: [
@@ -864,9 +986,9 @@
             }
           },
           {
-            data: { values: selected ? [{ xKey: selected }] : [] },
+            data: { values: selected == null ? [] : [{ index: selected }] },
             mark: { type: 'rule', color: colors.cursor, strokeWidth: 2.5, strokeDash: [4, 3] },
-            encoding: { x: { field: 'xKey', type: 'ordinal' } }
+            encoding: { x: { field: 'index', type: 'quantitative' } }
           }
         ],
         config: {
@@ -911,21 +1033,21 @@
             if (!svgRect) return;
             const fraction = (event.clientX - svgRect.left - margin.left) / Math.max(1, width);
             selectedIndices.vegaHost = nearestRowIndex(rows, fraction);
-            renderVegaLite(rows);
+            renderVegaLite(rows, daily);
           };
           const markCount = host ? host.querySelectorAll('svg path, svg rect, svg line').length : 0;
           if (markCount < 8) {
             console.warn('[Chart Compare] Vega-Lite rendered too few marks; using SVG fallback.');
-            renderVegaFallback(rows);
+            renderVegaFallback(rows, daily);
           }
         });
       }).catch(error => {
         console.error('[Chart Compare] Vega-Lite failed', error);
-        renderVegaFallback(rows);
+        renderVegaFallback(rows, daily);
       });
     }
 
-    function renderVegaFallback(rows) {
+    function renderVegaFallback(rows, daily) {
       const host = d3.select('#vegaHost');
       host.selectAll('*').remove();
       const hostEl = document.getElementById('vegaHost');
@@ -948,6 +1070,7 @@
       const lineTemp = d3.line().defined(d => d.temperatureF != null).x(d => x(d.index)).y(d => yTemp(d.temperatureF)).curve(d3.curveMonotoneX);
       const lineProb = d3.line().x(d => x(d.index)).y(d => yPct(d.precipProb)).curve(d3.curveMonotoneX);
       const tickEvery = Math.max(1, Math.ceil(rows.length / 6));
+      addD3DayBands(g, dayNightBands(rows, daily), innerH, edge => x(edge));
       g.append('g').attr('stroke', colors.grid).selectAll('line').data(yTemp.ticks(5)).join('line').attr('x1', 0).attr('x2', innerW).attr('y1', d => yTemp(d)).attr('y2', d => yTemp(d));
       g.selectAll('rect').data(rows).join('rect').attr('x', d => x(d.index) - Math.max(1, innerW / rows.length) * 0.325).attr('y', d => innerH - (d.rainMm / (d3.max(rows, r => r.rainMm) || 1)) * innerH * 0.35).attr('width', Math.max(1, innerW / rows.length) * 0.65).attr('height', d => (d.rainMm / (d3.max(rows, r => r.rainMm) || 1)) * innerH * 0.35).attr('fill', 'rgba(16,185,129,0.55)');
       for (let i = 1; i < rows.length; i++) {
@@ -971,7 +1094,7 @@
       const nivoModule = await import('https://esm.sh/@nivo/line@0.85.1?deps=react@18.2.0,react-dom@18.2.0');
       React = reactModule.default;
       createRoot = reactDomModule.createRoot;
-      ({ Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } = rechartsModule);
+      ({ Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } = rechartsModule);
       ({ ResponsiveLine } = nivoModule);
     }
 
@@ -985,9 +1108,10 @@
       root.render(element);
     }
 
-    function renderRecharts(rows) {
+    function renderRecharts(rows, daily) {
       const selected = selectedIndex('rechartsHost', rows);
       const [tempMin, tempMax] = tempDomain(rows);
+      const bands = dayNightBands(rows, daily);
       renderReactRoot('rechartsHost', React.createElement(ResponsiveContainer, { width: '100%', height: '100%' },
         React.createElement(ComposedChart, {
           data: rows,
@@ -995,7 +1119,7 @@
           onClick: state => {
             if (state?.activeTooltipIndex == null) return;
             selectedIndices.rechartsHost = state.activeTooltipIndex;
-            renderRecharts(rows);
+            renderRecharts(rows, daily);
           }
         },
           React.createElement('defs', null,
@@ -1009,6 +1133,16 @@
           React.createElement(YAxis, { yAxisId: 'prob', orientation: 'right', domain: [0, 100], tick: { fill: colors.prob, fontSize: 11 } }),
           React.createElement(YAxis, { yAxisId: 'rain', hide: true, domain: [0, 'dataMax'] }),
           React.createElement(Tooltip, null),
+          ...bands.map(band => React.createElement(ReferenceArea, {
+            key: `day-${band.date}-${band.start}`,
+            yAxisId: 'temp',
+            x1: rows[Math.max(0, Math.min(rows.length - 1, Math.ceil(band.start)))].label,
+            x2: rows[Math.max(0, Math.min(rows.length - 1, Math.floor(band.end)))].label,
+            fill: colors.dayBand,
+            stroke: 'none',
+            ifOverflow: 'visible',
+            isAnimationActive: false
+          })),
           React.createElement(Bar, { yAxisId: 'rain', dataKey: 'rainMm', name: 'Rain mm', fill: 'rgba(16,185,129,0.55)', isAnimationActive: false }),
           selected == null ? null : React.createElement(ReferenceLine, { yAxisId: 'temp', x: rows[selected].label, stroke: colors.cursor, strokeWidth: 2.5, strokeDasharray: '4 3', isAnimationActive: false }),
           React.createElement(Line, { yAxisId: 'temp', dataKey: 'temperatureF', name: 'Temp F', dot: false, stroke: 'url(#rechartsTempLineGradient)', strokeWidth: 2, isAnimationActive: false }),
@@ -1018,7 +1152,7 @@
       ensureHostAxisGradient('rechartsHost', rows);
     }
 
-    function renderNivo(rows) {
+    function renderNivo(rows, daily) {
       const tickEvery = Math.max(1, Math.ceil(rows.length / 6));
       const tickValues = rows.filter(r => r.index % tickEvery === 0).map(r => r.xKey);
       const maxRain = Math.max(...rows.map(r => r.rainMm), 0.1);
@@ -1027,6 +1161,20 @@
         { id: 'Precip %', color: colors.prob, data: rows.map(r => ({ x: r.xKey, y: r.precipProb })) }
       ];
       const [tempMin, tempMax] = tempDomain(rows);
+      const bands = dayNightBands(rows, daily);
+      const dayBandLayer = ({ innerHeight, innerWidth }) => {
+        const step = innerWidth / Math.max(1, rows.length - 1);
+        return React.createElement('g', { key: 'day-bands' },
+          bands.map(band => React.createElement('rect', {
+            key: `day-${band.date}-${band.start}`,
+            x: Math.max(0, (band.start + 0.5) * step),
+            y: 0,
+            width: Math.max(0, (band.end - band.start) * step),
+            height: innerHeight,
+            fill: colors.dayBand
+          }))
+        );
+      };
       const rainBarsLayer = ({ xScale, innerHeight, innerWidth }) => {
         const barWidth = Math.max(1, (innerWidth / Math.max(rows.length, 1)) * 0.65);
         return React.createElement('g', { key: 'rain-bars' },
@@ -1067,7 +1215,7 @@
         onClick: event => {
           const rect = event.currentTarget.getBoundingClientRect();
           selectedIndices.nivoHost = nearestRowIndex(rows, (event.clientX - rect.left) / Math.max(1, rect.width));
-          renderNivo(rows);
+          renderNivo(rows, daily);
         }
       });
       renderReactRoot('nivoHost', React.createElement(ResponsiveLine, {
@@ -1079,16 +1227,16 @@
         colors: series => series.id === 'Temp F' ? 'url(#nivoTempLineGradient)' : series.color,
         pointSize: 0,
         enableGridX: false,
-        layers: [gradientLayer, 'grid', 'markers', 'axes', rainBarsLayer, selectionLayer, 'areas', 'lines', 'points', 'slices', 'mesh', clickLayer],
+        layers: [gradientLayer, dayBandLayer, 'grid', 'markers', 'axes', rainBarsLayer, selectionLayer, 'areas', 'lines', 'points', 'slices', 'mesh', clickLayer],
         axisBottom: { tickRotation: -25, tickValues, format: value => String(value).split('|')[1] || value },
         theme: { text: { fill: colors.text, fontSize: 11 }, axis: { ticks: { line: { stroke: colors.grid }, text: { fill: colors.text } }, legend: { text: { fill: colors.text } } }, grid: { line: { stroke: colors.grid } }, tooltip: { container: { background: '#111827', color: colors.text } } }
       }));
       ensureHostAxisGradient('nivoHost', rows);
     }
 
-    function safeRender(name, renderFn, rows) {
+    function safeRender(name, renderFn, rows, daily) {
       try {
-        renderFn(rows);
+        renderFn(rows, daily);
       } catch (error) {
         console.error(`[Chart Compare] ${name} failed`, error);
         const host = document.getElementById(name);
@@ -1101,6 +1249,7 @@
       showEmpty();
     } else {
       fullRows = prepareRows(payload);
+      fullDaily = payload.daily || [];
       currentRangeHours = Math.min(24, fullRows.length);
       await renderAll(payload, sliceRows(currentRangeHours));
     }

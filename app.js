@@ -1,4 +1,4 @@
-// app.js @version 7.12.44
+// app.js @version 7.12.45
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.44'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '04/29/2026 1:26 AM';
+(function(){ try{ window.APP_VERSION='7.12.45'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/01/2026 6:33 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -33,11 +33,13 @@ let rangeIndex = 0; // start at 24h
 const MIN_TEMP_THRESHOLD_FOR_SNOW = 33; // Hide snow data when min temp exceeds this
 const MAX_WIND_DISPLAY = 40; // Maximum wind speed (mph) displayed at top of chart
 const MIN_VISIBLE_HOURS = 12; // Never zoom tighter than 12 visible hours
+const MOBILE_TOOLTIP_HIDE_DELAY_MS = 1500;
 
 let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
 let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 1.2)
 let lastClickedIndex = null; // Last clicked chart data index for scroll-centering
+let mobileTooltipTimer = null;
 let APPARENT_OVERLAY_ENABLED = false; // default off
 let WIND_DISPLAY_MODE = 'line'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 
@@ -315,10 +317,14 @@ function formatTooltipTime(iso){ const d=new Date(iso); const dow=['Sun','Mon','
 function formatPointFooter(iso){ const d=new Date(iso); const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; const mon=d.getMonth()+1; const day=d.getDate(); let h=d.getHours(); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${dow} ${mon}/${day} ${h} ${ap}`; }
 function formatXAxisHour(iso){ const d=new Date(iso); const h24=d.getHours(); if(h24===0) return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; if(h24===12) return 'Noon'; let h=h24; const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${h} ${ap}`; }
 function formatRangeDebugTime(iso){ const d=new Date(iso); const mon=d.getMonth()+1; const day=d.getDate(); let h=d.getHours(); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day} ${h}${ap}`; }
-function getVisibleHoursBounds(totalHours){ const maxHours = Math.max(1, Math.round(totalHours || 0)); const minHours = Math.min(MIN_VISIBLE_HOURS, maxHours); return { minHours, maxHours }; }
+function getVisibleHoursBaseStops(){ const rangeState = RANGE_STATES[rangeIndex]; if(rangeState===24) return [12]; if(rangeState===72) return [12,24,36,60]; if(rangeState===168) return [24,36,60,84,108]; return [24,60,84,108,204]; }
+function getVisibleHoursStops(totalHours){ const maxHours = Math.max(1, Math.round(totalHours || 0)); const baseStops = getVisibleHoursBaseStops().filter(h=>h<=maxHours); const stops = baseStops.length ? baseStops : [Math.min(MIN_VISIBLE_HOURS, maxHours)]; if(stops[stops.length-1]!==maxHours) stops.push(maxHours); return [...new Set(stops)].sort((a,b)=>a-b); }
+function getVisibleHoursBounds(totalHours){ const maxHours = Math.max(1, Math.round(totalHours || 0)); const stops = getVisibleHoursStops(maxHours); const minHours = Math.min(stops[0] || MIN_VISIBLE_HOURS, maxHours); return { minHours, maxHours }; }
 function clampVisibleHours(targetHours, totalHours){ const { minHours, maxHours } = getVisibleHoursBounds(totalHours); const parsed = Number.isFinite(targetHours) ? targetHours : maxHours; return Math.max(minHours, Math.min(maxHours, Math.round(parsed))); }
-function getVisibleHoursStep(totalHours){ const { maxHours } = getVisibleHoursBounds(totalHours); if(maxHours <= 36) return 0; if(maxHours <= 84) return 12; if(maxHours <= 192) return 24; return 48; }
-function snapVisibleHours(targetHours, totalHours){ const { minHours, maxHours } = getVisibleHoursBounds(totalHours); const clamped = clampVisibleHours(targetHours, totalHours); const step = getVisibleHoursStep(totalHours); if(maxHours <= 36){ const midpoint = Math.round((minHours + maxHours) / 2); const snaps = [minHours, midpoint, maxHours]; let best = snaps[0], bestDist = Infinity; for(const s of snaps){ const d = Math.abs(clamped - s); if(d < bestDist){ best = s; bestDist = d; } } return best; } if(clamped >= maxHours - (step / 2)) return maxHours; const snapped = minHours + Math.round((clamped - minHours) / step) * step; return Math.max(minHours, Math.min(maxHours, snapped)); }
+function snapVisibleHours(targetHours, totalHours){ const clamped = clampVisibleHours(targetHours, totalHours); const stops = getVisibleHoursStops(totalHours); let best = stops[0], bestDist = Infinity; for(const stop of stops){ const d = Math.abs(clamped - stop); if(d < bestDist){ best = stop; bestDist = d; } } return best; }
+function formatVisibleHoursLabel(hours, maxHours){ if(hours>=maxHours) return 'All'; if(hours>60) return `${Math.floor(hours/24)}d`; return `${hours}h`; }
+function updateVisibleHoursDisplay(valueSpan, hours, maxHours){ if(valueSpan) valueSpan.textContent = formatVisibleHoursLabel(hours, maxHours); }
+function renderVisibleHoursTicks(totalHours){ const ticks=$("mainScrollScaleTicks"); const slider=$("mainScrollScale"); if(!ticks||!slider) return; const minHours=parseFloat(slider.min); const maxHours=parseFloat(slider.max); const span=Math.max(1, maxHours-minHours); ticks.textContent=''; getVisibleHoursStops(totalHours).forEach(stop=>{ if(stop<minHours||stop>maxHours) return; const tick=document.createElement('span'); tick.textContent=formatVisibleHoursLabel(stop, maxHours); tick.style.left=`${((stop-minHours)/span)*100}%`; ticks.appendChild(tick); }); }
 function getVisibleHoursForScale(scale, scrollerWidth, pxPerHour){ if(!scale || !scrollerWidth || !pxPerHour) return 0; return scrollerWidth / (pxPerHour * scale); }
 function getScaleForVisibleHours(visibleHours, scrollerWidth, pxPerHour){ if(!visibleHours || !scrollerWidth || !pxPerHour) return 1; return scrollerWidth / (pxPerHour * visibleHours); }
 function findNowIndex(labels){ const now=Date.now(); let firstGE=labels.findIndex(t=> new Date(t).getTime()>=now); if(firstGE>=0) return firstGE; let bestIdx=0,best=Infinity; for(let i=0;i<labels.length;i++){ const d=Math.abs(new Date(labels[i]).getTime()-now); if(d<best){best=d; bestIdx=i;} } return bestIdx; }
@@ -327,11 +333,23 @@ function updateSunTimesForNow(daily, fullLabels, nowIdxFull, fetchedAt){ try{ co
 
 function calcDayAccum(hourly, idx){ const d=hourly[idx].time.substring(0,10); let sumLiquid=0, sumEstSnow=0; for(let i=0;i<=idx;i++){ if(hourly[i].time.substring(0,10)!==d) continue; const h=hourly[i]; sumLiquid += h.precipIn||0; const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(likely){ const ratio=getSnowRatio(h.temperatureF); sumEstSnow += (h.precipIn||0)*ratio; } } return {liquid:sumLiquid, estSnow:sumEstSnow}; }
 
-function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { minHours, maxHours } = getVisibleHoursBounds(hours); const stepHours = getVisibleHoursStep(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min=String(minHours); slider.max=String(maxHours); slider.step='any'; slider.dataset.snapStep=String(stepHours); }
+function isTouchTooltipMode(){ return window.matchMedia?.('(hover: none), (pointer: coarse)')?.matches || false; }
+function scheduleMobileTooltipHide(chartInstance){
+  if(!isTouchTooltipMode() || !chartInstance?.tooltip) return;
+  clearTimeout(mobileTooltipTimer);
+  mobileTooltipTimer = setTimeout(()=>{
+    try{
+      chartInstance.tooltip.setActiveElements([], {x: 0, y: 0});
+      chartInstance.update('none');
+    }catch(e){ console.warn('Unable to hide mobile tooltip', e); }
+  }, MOBILE_TOOLTIP_HIDE_DELAY_MS);
+}
+
+function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { minHours, maxHours } = getVisibleHoursBounds(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min=String(minHours); slider.max=String(maxHours); slider.step='any'; renderVisibleHoursTicks(hours); }
   if(LAYOUT_MODE==='fit'){
     LAYOUT_SCROLL_SCALE=fitScale;
     if(slider) slider.value=String(fitVisibleHours);
-    if(valueSpan) valueSpan.textContent=`${fitVisibleHours}h`;
+    updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
     scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
   } else {
     const currentVisibleHours = snapVisibleHours(getVisibleHoursForScale(LAYOUT_SCROLL_SCALE, scroller.clientWidth, pxPerHour), hours);
@@ -339,7 +357,7 @@ function applyLayout(labels){ const container=document.querySelector('.chart-con
     if(atFit){
       LAYOUT_SCROLL_SCALE=fitScale;
       if(slider) slider.value=String(fitVisibleHours);
-      if(valueSpan) valueSpan.textContent=`${fitVisibleHours}h`;
+      updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
       scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
     } else {
       const clampedVisibleHours = snapVisibleHours(currentVisibleHours, hours);
@@ -348,13 +366,14 @@ function applyLayout(labels){ const container=document.querySelector('.chart-con
       const w=Math.max(scroller.clientWidth, hours*pxPerHour*LAYOUT_SCROLL_SCALE);
       scroller.style.overflowX=(w<=scroller.clientWidth+1)?'hidden':'auto'; canvas.style.width=w+'px'; canvas.setAttribute('width', w);
       if(slider) slider.value=String(clampedVisibleHours);
-      if(valueSpan) valueSpan.textContent=`${clampedVisibleHours}h`;
+      updateVisibleHoursDisplay(valueSpan, clampedVisibleHours, maxHours);
     }
   } }
 
 // ---------- Build Chart ----------
 function buildChart(dataset){
   currentDataset = dataset; const ctx=$("weatherChart").getContext('2d'); if(chart) chart.destroy();
+  clearTimeout(mobileTooltipTimer);
   const fullHourly = dataset.hourly||[]; const fullLabels = fullHourly.map(h=>h.time); const nowIdxFull = findNowIndex(fullLabels);
   updateSunTimesForNow(dataset.daily||[], fullLabels, nowIdxFull, dataset.fetchedAt);
 
@@ -385,8 +404,13 @@ function buildChart(dataset){
 
   applyLayout(labels);
 
-  const minT=Math.min(...temps.filter(x=>x!=null)), maxT=Math.max(...temps.filter(x=>x!=null));
-  const yMin=Math.floor(minT-5); let yMax=Math.ceil(maxT+5); if(maxT<35) yMax=35;
+  const tempValues = temps.filter(x=>x!=null);
+  const axisTempValues = APPARENT_OVERLAY_ENABLED ? tempValues.concat(apTemps.filter(x=>x!=null)) : tempValues;
+  const minT = tempValues.length ? Math.min(...tempValues) : 32;
+  const maxT = tempValues.length ? Math.max(...tempValues) : 32;
+  const axisMinT = axisTempValues.length ? Math.min(...axisTempValues) : minT;
+  const axisMaxT = axisTempValues.length ? Math.max(...axisTempValues) : maxT;
+  const yMin=Math.floor(axisMinT-5); let yMax=Math.ceil(axisMaxT+5); if(axisMaxT<35) yMax=35;
 
   // Accumulation bar scaling in mm: snap to rounded metric ranges.
   let maxPrecip = Math.max(...precip, 0.1);
@@ -462,13 +486,23 @@ function buildChart(dataset){
 
   const hideChartYAxis = (GRADIENT_MODE==='custom-scale');
 
+  const precipChanceFill = (context) => {
+    const area = context.chart.chartArea;
+    if (!area) return 'rgba(147,197,253,0.18)';
+    const gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    gradient.addColorStop(0, 'rgba(147,197,253,0.34)');
+    gradient.addColorStop(0.55, 'rgba(96,165,250,0.16)');
+    gradient.addColorStop(1, 'rgba(59,130,246,0.02)');
+    return gradient;
+  };
+
   const baseDatasets = [
     { type:'bar', label:'Accumulation', data:scaledPrecip, yAxisID:'yAccum', backgroundColor:barColors, borderColor:barColors.map(()=>"#111827"), borderWidth:1, categoryPercentage:1.0, barPercentage:1.0, hidden: false, order: 10 },
     { type:'line', label:'Temperature', data:temps, yAxisID:'yTemp', borderColor:'#eab308', backgroundColor:'rgba(234,179,8,0.20)', tension:0.3, pointRadius:2, pointHoverRadius:3, order: 1,
       datalabels:{ display:(c)=>{ const i=c.dataIndex; const d=labelDates[i]; const fm=firstMinMaxIndexByDay[d]; if(!fm) return false; return i===fm.minIdx || i===fm.maxIdx; }, formatter:(v)=>`${Math.round(v)}\u00B0`, align:(c)=>{ const i=c.dataIndex; const fm=firstMinMaxIndexByDay[labelDates[i]]; return (!fm)?'top':(i===fm.minIdx?'bottom':'top'); }, offset:4, color: isDark ? '#e5e7eb' : '#111827', backgroundColor:'rgba(0,0,0,0)', borderWidth:0, clamp:true }
     },
     { type:'line', label:'Feels Like', data:apTemps, yAxisID:'yTemp', borderColor:'#f472b6', backgroundColor:'rgba(244,114,182,0.18)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5, hidden: !APPARENT_OVERLAY_ENABLED, order: 2 },
-    { type:'line', label:'Chance of Precip', data:prob, yAxisID:'yProb', borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.26)', tension:0.3, pointRadius:1.5, pointHoverRadius:2.5, order: 3 }
+    { type:'line', label:'Chance of Precip', data:prob, yAxisID:'yProb', borderColor:'#3b82f6', backgroundColor:precipChanceFill, fill:true, tension:0.3, pointRadius:1.5, pointHoverRadius:2.5, order: 3 }
   ];
   
   // Add wind speed line if in line mode (uses same scale as precipitation)
@@ -533,6 +567,7 @@ function buildChart(dataset){
         lastClickedIndex = i;
         setCursorAnnotation(chart, labels[i]);
         chart.update();
+        scheduleMobileTooltipHide(chart);
       },
       plugins: {
         legend: { display: false },
@@ -561,8 +596,16 @@ function buildChart(dataset){
                   : "Feels Like: N/A";
               if (ctx.dataset.yAxisID === "yProb")
                 return `Chance: ${h.precipProb ?? "N/A"}%`;
-              if (ctx.dataset.yAxisID === "yAccum")
+              if (
+                ctx.dataset.yAxisID === "yAccum" &&
+                ctx.dataset.label === "Accumulation"
+              )
                 return `Accum: ${h.precipIn.toFixed(1)} mm`;
+              if (
+                ctx.dataset.yAxisID === "yAccum" &&
+                ctx.dataset.label === "Wind Speed"
+              )
+                return "";
               return "";
             },
             footer: (items) => {
@@ -651,7 +694,7 @@ function buildChart(dataset){
   try{ SeparateColorBar.render(chart); }catch{}
 
   // Hover straight line helper
-  chart.canvas.addEventListener('mousemove', (evt)=>{ const e=(evt&&evt.native)?evt.native:evt; const pos=Chart.helpers.getRelativePosition(e, chart); const a=chart.chartArea; if(!a || !(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)){ clearHoverAnnotation(chart); chart.update('none'); return; } const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); setHoverAnnotation(chart, labels[i]); chart.update('none'); });
+  chart.canvas.addEventListener('mousemove', (evt)=>{ const e=(evt&&evt.native)?evt.native:evt; const pos=Chart.helpers.getRelativePosition(e, chart); const a=chart.chartArea; if(!a || !(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)){ clearHoverAnnotation(chart); chart.update('none'); return; } const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); setHoverAnnotation(chart, labels[i]); chart.update('none'); scheduleMobileTooltipHide(chart); });
   chart.canvas.addEventListener('mouseleave', ()=>{ clearHoverAnnotation(chart); chart.update('none'); });
 
   // Re-apply cursor line and re-center scroll if a point was previously selected
@@ -959,7 +1002,7 @@ function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.t
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
 function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
-function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const maxVisibleHours=parseFloat(slider.max); const desiredVisibleHours=snapVisibleHours(parseFloat(slider.value), maxVisibleHours); slider.value=String(desiredVisibleHours); if(valueSpan) valueSpan.textContent=`${desiredVisibleHours}h`; const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
+function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const maxVisibleHours=parseFloat(slider.max); const desiredVisibleHours=snapVisibleHours(parseFloat(slider.value), maxVisibleHours); slider.value=String(desiredVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
     const scroller=$('chartScroll'); const pxPerHour=56;
     if(scroller){ LAYOUT_SCROLL_SCALE=getScaleForVisibleHours(desiredVisibleHours, scroller.clientWidth, pxPerHour); }
     if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
@@ -981,7 +1024,12 @@ function openChartCompare(){
     latitude: currentLocationLat,
     longitude: currentLocationLon,
     generatedAt: new Date().toISOString(),
-    hourly
+    hourly,
+    daily: (currentDataset.daily || []).map(d => ({
+      date: d.date,
+      sunrise: d.sunrise,
+      sunset: d.sunset
+    }))
   };
   try{
     sessionStorage.setItem('PEVcast.chartCompare.dataset', JSON.stringify(payload));
@@ -1110,7 +1158,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.44`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.45`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1323,6 +1371,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

@@ -108,14 +108,34 @@ Visit: [https://open-meteo.com](https://open-meteo.com)
 
 ```
 PEVcast/
-├── app.js              # Main application logic (600+ lines)
-├── index.html          # DOM structure and UI
-├── styles.css          # Theming and layout
-├── .vscode/
-│   └── launch.json     # VS Code F5 debug configuration
 ├── .copilot/
-│   └── instructions.md # Development guidelines
-└── README.md           # This file
+│   └── instructions.md        # Development guidelines
+├── .githooks/
+│   ├── pre-commit             # Version sync before commit
+│   └── pre-push               # Version consistency check before push
+├── .vscode/
+│   ├── launch.json            # VS Code F5 debug configuration
+│   └── tasks.json             # Version automation tasks
+├── icons/
+│   ├── icon-192.svg           # PWA icon
+│   └── icon-512.svg           # PWA icon
+├── scripts/
+│   ├── bump-version.ps1       # Shared version metadata automation
+│   └── install-git-hooks.ps1  # Local hook installer
+├── .gitignore                 # Git ignore rules
+├── app.js                     # Main application logic and chart behavior
+├── chart-compare.html         # Forecast chart comparison tool
+├── favicon.ico                # Browser favicon
+├── generate-testdata.ps1      # Test data generator
+├── index.html                 # DOM structure and UI
+├── LICENSE.txt                # Project license
+├── manifest.json              # PWA manifest
+├── README.md                  # This file
+├── start_server.bat           # Local server launcher
+├── styles.css                 # Theming and layout
+├── sw.js                      # Service worker and app-shell caching
+├── testdata-2026-01-24.js     # Local test forecast data
+└── version.json               # Published version metadata
 ```
 
 ### Key Components
@@ -133,6 +153,9 @@ PEVcast/
 
 | Version | Release Date | Notable Changes |
 |---------|--------------|-----------------|
+| Unreleased | Pending | Feels Like overlay now expands the temperature y-axis when enabled; README file structure and version history refreshed |
+| 7.12.44 | Apr 29, 2026 | Visible Hours slider tick labels, range-specific snapping controls, Weather Data modal mapping QA, mobile tooltip auto-hide, chart compare daily sunrise/sunset payload, precipitation chance fill styling |
+| 7.12.x | Apr 2026 | Git hook version automation, service-worker cache version alignment, update-check workflow, PWA cache metadata |
 | 7.12.24 | Mar 17, 2026 | Added wind speed labels to speed line, custom canvas plugin |
 | 7.12.20 | Mar 17, 2026 | Daily wind speed range display (high/low with MPH) |
 | 7.12.15 | Mar 17, 2026 | Wind display modes (barbs, arrows, overlay, line) |
@@ -158,6 +181,7 @@ PEVcast/
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\install-git-hooks.ps1` once per clone to install the local hooks.
 - `scripts\bump-version.ps1` is the shared source of truth for version updates.
 - The hook treats `app.js`, `sw.js`, `manifest.json`, and `version.json` as part of the JS/app build version bucket.
+- The hook keeps `sw.js` `CACHE_VERSION` aligned to the HTML/CSS/JS version set so browser service-worker caches refresh with each app release.
 
 ### VS Code Workflow
 
