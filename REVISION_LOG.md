@@ -1,4 +1,19 @@
 # PEVcast Revision Log
+
+---
+
+## 7.12.47 - 2026-05-09
+
+### Weather Data Popup
+- Allowed the Weather Data popup to rotate naturally on mobile.
+- Adjusted mobile popup sizing to use the small viewport height for better browser-chrome handling.
+
+### Locations
+- Made the Quick List editor full screen on mobile.
+- Tightened the mobile Quick List row layout with a no-margin star column and about 40% width for city names.
+- Stacked coordinates on mobile to preserve horizontal space.
+- Replaced the Drag and Delete text buttons with icon buttons.
+
 ---
 ## 7.12.46 - 2026-05-09
 
@@ -160,4 +175,5 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 

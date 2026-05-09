@@ -1,4 +1,4 @@
-// app.js @version 7.12.46
+// app.js @version 7.12.47
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.46'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/09/2026 1:06 AM';
+(function(){ try{ window.APP_VERSION='7.12.47'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/09/2026 1:27 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -975,8 +975,8 @@ function applyWeatherDataModalLayout(){
   if(!modal || !panel || !wrap) return;
   const mobile=window.matchMedia?.('(max-width: 760px), (pointer: coarse)')?.matches || window.innerWidth<=760;
   if(mobile){
-    Object.assign(panel.style,{left:'0',top:'0',transform:'none',width:'100vw',height:'100dvh',maxWidth:'none',maxHeight:'none',borderRadius:'0',border:'0'});
-    Object.assign(wrap.style,{maxHeight:'calc(100dvh - 45px)',height:'calc(100dvh - 45px)'});
+    Object.assign(panel.style,{left:'0',top:'0',transform:'none',width:'100vw',height:'100svh',maxWidth:'none',maxHeight:'none',borderRadius:'0',border:'0'});
+    Object.assign(wrap.style,{maxHeight:'calc(100svh - 45px)',height:'calc(100svh - 45px)'});
   } else {
     Object.assign(panel.style,{left:'50%',top:'10%',transform:'translateX(-50%)',width:'80%',height:'auto',maxWidth:'1200px',maxHeight:'70%',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.2)'});
     Object.assign(wrap.style,{maxHeight:'calc(70vh - 48px)',height:'auto'});
@@ -1053,6 +1053,7 @@ function centerWeatherDataColumn(table, col){
 function cleanClipboardCell(value){ return String(value ?? '').replace(/[\r\n]+/g, ' '); }
 
 function showWeatherData(){
+  allowNaturalOrientation();
   const modal=ensureDataModal(); const inner=$("dataTableInner"); if(!inner) return;
   const ds=currentDataset; if(!ds||!ds.hourly){ alert('No dataset loaded'); return; }
   const H=ds.hourly; const cols=H.map(h=>h.time);
@@ -1141,6 +1142,7 @@ function showWeatherData(){
 }
 
 function showQuickListEditor(){
+  allowNaturalOrientation();
   let locations=readSavedLocations().map(loc=>({...loc}));
   let editorDefault=readDefaultLocation();
   let modal=$("quickListEditorModal");
@@ -1172,6 +1174,21 @@ function showQuickListEditor(){
   }
   const rows=$("quickListRows");
   let dragState=null;
+  function isQuickListMobile(){ return window.matchMedia?.('(max-width: 760px), (pointer: coarse)')?.matches || window.innerWidth<=760; }
+  function applyQuickListEditorLayout(){
+    const modal=$("quickListEditorModal"), panel=$("quickListEditorPanel"), rowsEl=$("quickListRows");
+    if(!modal || !panel || !rowsEl) return;
+    const mobile=isQuickListMobile();
+    if(mobile){
+      Object.assign(modal.style,{padding:'0'});
+      Object.assign(panel.style,{width:'100vw',height:'100svh',maxHeight:'none',borderRadius:'0',border:'0'});
+      Object.assign(rowsEl.style,{padding:'8px 8px'});
+    } else {
+      Object.assign(modal.style,{padding:'16px'});
+      Object.assign(panel.style,{width:'min(920px,100%)',height:'calc(100vh - 32px)',maxHeight:'820px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.25)'});
+      Object.assign(rowsEl.style,{padding:'10px 12px'});
+    }
+  }
   function isDefaultLoc(loc){ return editorDefault?.mode==='saved' && editorDefault.locationId===loc.id; }
   function updateGpsStar(){ const star=$("quickGpsDefaultStar"); if(star){ const active=editorDefault?.mode==='gps'; star.textContent=active?'★':'☆'; star.style.opacity=active?'1':'0.5'; star.setAttribute('aria-pressed', active?'true':'false'); } }
   function clearDropIndicators(){
@@ -1211,6 +1228,8 @@ function showQuickListEditor(){
   }
   function render(){
     if(!rows) return;
+    applyQuickListEditorLayout();
+    const mobile=isQuickListMobile();
     rows.textContent='';
     updateGpsStar();
     if(!locations.length){
@@ -1223,27 +1242,28 @@ function showQuickListEditor(){
     locations.forEach((loc, index)=>{
       const row=document.createElement('div');
       row.dataset.index=String(index);
-      Object.assign(row.style,{display:'grid',gridTemplateColumns:'34px 1fr auto auto',gap:'8px',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(107,114,128,0.22)',boxShadow:'none',touchAction:'none'});
+      Object.assign(row.style,{display:'grid',gridTemplateColumns:mobile?'26px minmax(0, 40%) minmax(68px, 1fr) 74px':'34px 1fr auto auto',gap:mobile?'4px':'8px',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(107,114,128,0.22)',boxShadow:'none',touchAction:'none'});
       const star=document.createElement('button');
       const defaultLoc=isDefaultLoc(loc);
       star.textContent=defaultLoc?'★':'☆';
       star.title='Set as default location';
-      Object.assign(star.style,{height:'30px',width:'30px',border:'0',background:'transparent',color:'#facc15',cursor:'pointer',fontSize:'1.15rem',opacity:defaultLoc?'1':'0.5'});
+      Object.assign(star.style,{height:'30px',width:'24px',border:'0',background:'transparent',color:'#facc15',cursor:'pointer',fontSize:'1.15rem',opacity:defaultLoc?'1':'0.5',padding:'0',margin:'0'});
       star.addEventListener('click', ()=>{ editorDefault={mode:'saved',locationId:loc.id,name:loc.name,lat:loc.lat,lon:loc.lon,savedAt:new Date().toISOString()}; render(); });
       const input=document.createElement('input');
       input.value=loc.name;
       input.title=`${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}`;
-      Object.assign(input.style,{minWidth:'0',height:'30px',boxSizing:'border-box',borderRadius:'6px',border:'1px solid rgba(107,114,128,0.5)',padding:'0 8px',background:'#ffffff',color:'#111827'});
+      Object.assign(input.style,{minWidth:'0',width:'100%',height:'30px',boxSizing:'border-box',borderRadius:'6px',border:'1px solid rgba(107,114,128,0.5)',padding:'0 8px',background:'#ffffff',color:'#111827'});
       input.addEventListener('input', ()=>{ locations[index].name=input.value; });
       const coords=document.createElement('div');
-      coords.textContent=`${loc.lat.toFixed(3)}, ${loc.lon.toFixed(3)}`;
-      Object.assign(coords.style,{fontSize:'0.78rem',opacity:'0.75',whiteSpace:'nowrap'});
+      coords.innerHTML=mobile ? `${loc.lat.toFixed(3)}<br>${loc.lon.toFixed(3)}` : `${loc.lat.toFixed(3)}, ${loc.lon.toFixed(3)}`;
+      Object.assign(coords.style,{fontSize:mobile?'0.72rem':'0.78rem',opacity:'0.75',whiteSpace:mobile?'normal':'nowrap',lineHeight:'1.15'});
       const controls=document.createElement('div');
-      Object.assign(controls.style,{display:'flex',gap:'4px'});
+      Object.assign(controls.style,{display:'flex',gap:'4px',justifyContent:'flex-end'});
       [['Drag','drag'],['Delete','delete']].forEach(([label, action])=>{
         const b=document.createElement('button');
-        b.textContent=label;
-        Object.assign(b.style,{height:'28px',borderRadius:'6px',border:'1px solid #374151',background:action==='delete'?'#7f1d1d':'#1f2937',color:'#e5e7eb',cursor:action==='drag'?'grab':'pointer',touchAction:'none'});
+        b.textContent=action==='drag'?'☰':'🗑';
+        b.title=label;
+        Object.assign(b.style,{height:'30px',width:'32px',borderRadius:'6px',border:'1px solid #374151',background:action==='delete'?'#7f1d1d':'#1f2937',color:'#e5e7eb',cursor:action==='drag'?'grab':'pointer',touchAction:'none',fontSize:'1rem',padding:'0'});
         b.addEventListener('click', ()=>{
           if(action==='delete'){ locations.splice(index,1); render(); }
         });
@@ -1305,6 +1325,7 @@ function showQuickListEditor(){
     modal.style.display='none';
   };
   render();
+  applyQuickListEditorLayout();
   modal.style.display='block';
 }
 
@@ -1646,7 +1667,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.46`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.47`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1749,6 +1770,9 @@ async function showRevisionLogDialog(){
   }catch(e){
     if(content) content.innerHTML=`<p style="margin:0;color:${isDark?'#fecaca':'#7f1d1d'}">Unable to load the revision log right now.</p><p style="margin:8px 0 0 0;opacity:0.75">${formatRevisionMarkdownInline(e?.message||'Unknown error')}</p>`;
   }
+}
+function allowNaturalOrientation(){
+  try{ screen.orientation?.unlock?.(); }catch{}
 }
 function showAboutDialog(){
   let backdrop = document.getElementById('aboutBackdrop');
@@ -1952,6 +1976,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
