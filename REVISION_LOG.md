@@ -2,6 +2,15 @@
 
 ---
 
+## 7.12.48 - 2026-05-09
+
+### Locations
+- Restored vertical scrolling in the mobile Quick List editor by allowing pan-y behavior in the rows area.
+- Increased the mobile city name column to about 60% width.
+- Kept the three sort buttons grouped on one row with compact labels.
+
+---
+
 ## 7.12.47 - 2026-05-09
 
 ### Weather Data Popup
@@ -175,5 +184,6 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 

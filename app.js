@@ -1,4 +1,4 @@
-// app.js @version 7.12.47
+// app.js @version 7.12.48
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.47'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/09/2026 1:27 AM';
+(function(){ try{ window.APP_VERSION='7.12.48'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/09/2026 1:50 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -1157,11 +1157,15 @@ function showQuickListEditor(){
           <button id="quickListClose" style="border:1px solid rgba(107,114,128,0.5);border-radius:6px;background:transparent;color:inherit;cursor:pointer;height:28px;width:32px">x</button>
         </div>
         <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid rgba(107,114,128,0.25)">
-          <button id="quickGpsDefaultStar" style="height:32px;border:0;background:transparent;color:#facc15;cursor:pointer;padding:0 10px;font-size:1.15rem" title="Use GPS location as default">☆</button>
-          <span style="align-self:center;margin-right:8px">Use GPS location as default</span>
-          <button id="quickSortAlpha" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort A-Z</button>
-          <button id="quickSortWestEast" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort West-East</button>
-          <button id="quickSortNorthSouth" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort North-South</button>
+          <div style="display:flex;align-items:center;gap:8px;flex:1 1 100%">
+            <button id="quickGpsDefaultStar" style="height:32px;border:0;background:transparent;color:#facc15;cursor:pointer;padding:0 10px;font-size:1.15rem" title="Use GPS location as default">☆</button>
+            <span style="align-self:center;margin-right:8px">Use GPS location as default</span>
+          </div>
+          <div id="quickSortRow" style="display:flex;gap:6px;flex:1 1 100%;flex-wrap:nowrap">
+            <button id="quickSortAlpha" style="height:32px;flex:1 1 0;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;padding:0 6px;white-space:nowrap">Sort A-Z</button>
+            <button id="quickSortWestEast" style="height:32px;flex:1 1 0;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;padding:0 6px;white-space:nowrap">Sort W-E</button>
+            <button id="quickSortNorthSouth" style="height:32px;flex:1 1 0;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;padding:0 6px;white-space:nowrap">Sort N-S</button>
+          </div>
         </div>
         <div id="quickListRows" style="padding:10px 12px;overflow:auto;flex:1;min-height:0"></div>
         <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 12px;border-top:1px solid rgba(107,114,128,0.35);flex:0 0 auto;background:inherit">
@@ -1182,7 +1186,7 @@ function showQuickListEditor(){
     if(mobile){
       Object.assign(modal.style,{padding:'0'});
       Object.assign(panel.style,{width:'100vw',height:'100svh',maxHeight:'none',borderRadius:'0',border:'0'});
-      Object.assign(rowsEl.style,{padding:'8px 8px'});
+      Object.assign(rowsEl.style,{padding:'8px 8px',overflowY:'auto',WebkitOverflowScrolling:'touch',touchAction:'pan-y'});
     } else {
       Object.assign(modal.style,{padding:'16px'});
       Object.assign(panel.style,{width:'min(920px,100%)',height:'calc(100vh - 32px)',maxHeight:'820px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.25)'});
@@ -1242,7 +1246,7 @@ function showQuickListEditor(){
     locations.forEach((loc, index)=>{
       const row=document.createElement('div');
       row.dataset.index=String(index);
-      Object.assign(row.style,{display:'grid',gridTemplateColumns:mobile?'26px minmax(0, 40%) minmax(68px, 1fr) 74px':'34px 1fr auto auto',gap:mobile?'4px':'8px',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(107,114,128,0.22)',boxShadow:'none',touchAction:'none'});
+      Object.assign(row.style,{display:'grid',gridTemplateColumns:mobile?'26px minmax(0, 60%) minmax(44px, 1fr) 74px':'34px 1fr auto auto',gap:mobile?'4px':'8px',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(107,114,128,0.22)',boxShadow:'none',touchAction:'pan-y'});
       const star=document.createElement('button');
       const defaultLoc=isDefaultLoc(loc);
       star.textContent=defaultLoc?'★':'☆';
@@ -1667,7 +1671,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.47`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.48`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1976,6 +1980,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
