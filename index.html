@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.24', css: '7.12.21', js: '7.12.45' };
+    window.FILE_VERSIONS = { html: '7.12.25', css: '7.12.21', js: '7.12.46' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -36,11 +36,11 @@
       <div id="cityTitle" class="city-title">Moon Township, PA</div>
     </div>
     <div class="controls-group">
-      <select id="quickSelect" class="quick-select" title="Quick Select (sorted west -> east)">
+      <select id="quickSelect" class="quick-select" title="Quick Select">
         <option value="" selected>Quick Select</option>
       </select>
       <div class="search-group">
-        <input id="cityInput" type="text" placeholder="Enter city or ZIP" />
+        <input id="cityInput" type="text" placeholder="Enter city, ZIP, or coordinates" title="Search by city, ZIP, or coordinates like 40.520, -80.241" />
         <button id="searchBtn">Search</button>
       </div>
       <select id="snowRatio" class="quick-select" title="Snow ratio">
@@ -144,16 +144,17 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.24</span>
+      <span id="ver-html">index.html v7.12.25</span>
       <span>|</span>
       <span id="ver-css">styles.css v7.12.21</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.45</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/01/2026 6:33 PM</span>
+      <span id="ver-js">app.js v7.12.46</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/09/2026 1:06 AM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

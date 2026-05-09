@@ -151,6 +151,8 @@ PEVcast/
 
 ## Version History
 
+Detailed release notes live in [REVISION_LOG.md](REVISION_LOG.md). This table remains a brief summary.
+
 | Version | Release Date | Notable Changes |
 |---------|--------------|-----------------|
 | Unreleased | Pending | Feels Like overlay now expands the temperature y-axis when enabled; README file structure and version history refreshed |

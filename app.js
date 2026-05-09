@@ -1,4 +1,4 @@
-// app.js @version 7.12.45
+// app.js @version 7.12.46
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,20 +10,20 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.45'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/01/2026 6:33 PM';
+(function(){ try{ window.APP_VERSION='7.12.46'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/09/2026 1:06 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
 
 let chart;
 let SHOW_SUNRISE_SUNSET = false; // Toggle sunrise/sunset lines on chart
-let isDark = localStorage.getItem('PEVcast-dark-mode') !== null ? JSON.parse(localStorage.getItem('PEVcast-dark-mode')) : true;
+let isDark = localStorage.getItem('PEVcast-dark-mode') !== null ? JSON.parse(localStorage.getItem('PEVcast-dark-mode')) : false;
 let TEST_MODE_ENABLED = false;
 let currentDataset = null;
 let currentLocationLat = null; // Current location latitude for radar
 let currentLocationLon = null; // Current location longitude for radar
-let currentCityName = 'Moon Township, PA'; // Current city for reloading with past_days
+let currentCityName = ''; // Current city for reloading with past_days
 let pastDays = 0; // Past days to include (0-92); 0=forecast only, 3/7/14=with history
 const PAST_DAYS_CYCLE = [0, 3, 7, 14]; // Cycle through these values on shift-click
 
@@ -39,9 +39,14 @@ let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
 let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 1.2)
 let lastClickedIndex = null; // Last clicked chart data index for scroll-centering
+let lastClickedTime = null; // Last clicked chart time for Weather Data column selection
 let mobileTooltipTimer = null;
-let APPARENT_OVERLAY_ENABLED = false; // default off
-let WIND_DISPLAY_MODE = 'line'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
+const FEELS_LIKE_LINE_STORAGE_KEY = 'PEVcast-feels-like-line';
+let APPARENT_OVERLAY_ENABLED = localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY)) : false;
+const WIND_SPEED_LINE_STORAGE_KEY = 'PEVcast-wind-speed-line';
+let WIND_SPEED_LINE_ENABLED = localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY)) : true;
+let WIND_DISPLAY_MODE = WIND_SPEED_LINE_ENABLED ? 'line' : 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
+const REVERSE_GEOCODE_CACHE_STORAGE_KEY = 'PEVcast-reverse-geocode-cache-v1';
 
 // Gradient render modes
 // 'plugin' | 'dom' | 'axis-overlay' | 'custom-scale' | 'separate-canvas' | 'off'
@@ -75,6 +80,9 @@ const QUICK_SELECT_CITIES = {
   "Toronto, ON": { lat: 43.6532, lon: -79.3832 }
 };
 
+const LOCATIONS_STORAGE_KEY = 'PEVcast-locations-v1';
+const DEFAULT_LOCATION_STORAGE_KEY = 'PEVcast-default-location-v1';
+
 function $(id){ return document.getElementById(id); }
 function setCityTitle(name){ const el=$("cityTitle"); if(!el) return; el.textContent = name; const lat=currentLocationLat, lon=currentLocationLon; if(lat!=null && lon!=null){ el.title=`${lat.toFixed(4)}, ${lon.toFixed(4)}`; el.style.cursor='help'; } else { el.title=''; el.style.cursor=''; } }
 
@@ -102,6 +110,123 @@ function initCityTitleTooltip(){
   el.addEventListener('touchend',()=>{ clearTimeout(pressTimer); },{passive:true});
   el.addEventListener('touchmove',()=>{ clearTimeout(pressTimer); },{passive:true});
   document.addEventListener('touchstart',(e)=>{ if(!popup.classList.contains('hidden')&&e.target!==el&&!popup.contains(e.target)) hidePopup(); },{passive:true});
+}
+
+// ---------- Saved Locations ----------
+function createLocationId(){ return `loc-${Date.now()}-${Math.random().toString(36).slice(2,8)}`; }
+function normalizeLocation(loc){
+  if(!loc) return null;
+  const name=String(loc.name||'').trim();
+  const lat=Number(loc.lat);
+  const lon=Number(loc.lon);
+  if(!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { id: String(loc.id||createLocationId()), name, lat, lon };
+}
+function getSeedLocations(){
+  return Object.entries(QUICK_SELECT_CITIES)
+    .sort((a,b)=>a[1].lon-b[1].lon)
+    .map(([name, coords])=>normalizeLocation({ id:`seed-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}`, name, lat:coords.lat, lon:coords.lon }))
+    .filter(Boolean);
+}
+function readStoredJson(key){
+  try{ const raw=localStorage.getItem(key); return raw ? JSON.parse(raw) : null; }catch{ return null; }
+}
+function writeStoredJson(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+function readSavedLocations(){
+  const raw=readStoredJson(LOCATIONS_STORAGE_KEY);
+  const list=Array.isArray(raw) ? raw.map(normalizeLocation).filter(Boolean) : [];
+  if(list.length) return list;
+  const seeded=getSeedLocations();
+  writeSavedLocations(seeded);
+  return seeded;
+}
+function writeSavedLocations(locations){ writeStoredJson(LOCATIONS_STORAGE_KEY, (locations||[]).map(normalizeLocation).filter(Boolean)); }
+function readDefaultLocation(){
+  const raw=readStoredJson(DEFAULT_LOCATION_STORAGE_KEY);
+  if(!raw || typeof raw!=='object') return null;
+  if(raw.mode==='gps') return { mode:'gps', name:raw.name||'', lat:Number(raw.lat), lon:Number(raw.lon), savedAt:raw.savedAt||null };
+  if(raw.mode==='saved') return { mode:'saved', locationId:raw.locationId||null, name:raw.name||'', lat:Number(raw.lat), lon:Number(raw.lon), savedAt:raw.savedAt||null };
+  return null;
+}
+function writeDefaultLocation(value){ writeStoredJson(DEFAULT_LOCATION_STORAGE_KEY, value); }
+function clearDefaultLocation(){ localStorage.removeItem(DEFAULT_LOCATION_STORAGE_KEY); }
+function findSavedLocationById(id){ return readSavedLocations().find(loc=>loc.id===id) || null; }
+function coordsAreNear(a,b){ if(!a||!b) return false; return Math.abs(Number(a.lat)-Number(b.lat))<=0.02 && Math.abs(Number(a.lon)-Number(b.lon))<=0.02; }
+function findDuplicateLocation(loc, locations=readSavedLocations()){
+  const name=(loc?.name||'').trim().toLowerCase();
+  return locations.find(saved=>saved.name.trim().toLowerCase()===name || coordsAreNear(saved, loc)) || null;
+}
+function currentLocationRecord(){
+  if(currentLocationLat==null || currentLocationLon==null) return null;
+  return normalizeLocation({ name: currentCityName || $('cityTitle')?.textContent || 'Current Location', lat: currentLocationLat, lon: currentLocationLon });
+}
+function syncGpsDefaultCheckbox(){
+  const box=$('mGpsDefault');
+  if(box) box.checked = readDefaultLocation()?.mode === 'gps';
+}
+function saveCurrentLocationAsDefault(){
+  const loc=currentLocationRecord();
+  if(!loc){ alert('No current location is loaded yet.'); return; }
+  const match=findDuplicateLocation(loc);
+  writeDefaultLocation({ mode:'saved', locationId:match?.id||null, name:loc.name, lat:loc.lat, lon:loc.lon, savedAt:new Date().toISOString() });
+  syncGpsDefaultCheckbox();
+  alert(`${loc.name} saved as default.`);
+}
+function saveGpsDefault(enabled){
+  if(enabled) writeDefaultLocation({ mode:'gps', savedAt:new Date().toISOString() });
+  else if(readDefaultLocation()?.mode==='gps') clearDefaultLocation();
+  syncGpsDefaultCheckbox();
+}
+function saveCurrentLocationToQuickList(){
+  const loc=currentLocationRecord();
+  if(!loc){ alert('No current location is loaded yet.'); return; }
+  const locations=readSavedLocations();
+  const duplicate=findDuplicateLocation(loc, locations);
+  if(duplicate){
+    const choice=prompt(`"${duplicate.name}" already looks like this location.\nType U to update it, A to add anyway, or C to cancel.`, 'U');
+    const action=(choice||'').trim().toUpperCase();
+    if(action==='C' || action==='') return;
+    if(action==='U'){
+      const updated=locations.map(item=>item.id===duplicate.id ? {...item, name:loc.name, lat:loc.lat, lon:loc.lon} : item);
+      writeSavedLocations(updated);
+      populateQuickSelectSorted();
+      alert(`${loc.name} updated in Quick List.`);
+      return;
+    }
+    if(action!=='A') return;
+  }
+  locations.push({...loc, id:createLocationId()});
+  writeSavedLocations(locations);
+  populateQuickSelectSorted();
+  alert(`${loc.name} saved to Quick List.`);
+}
+function requestDeviceLocation(){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.geolocation){ reject(new Error('Geolocation not supported by this browser.')); return; }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {enableHighAccuracy:true, timeout:8000, maximumAge:300000});
+  });
+}
+async function loadGpsLocation(saveAsDefault=false){
+  const pos=await requestDeviceLocation();
+  const {latitude:lat, longitude:lon}=pos.coords||{};
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS did not return valid coordinates.');
+  return loadCoordinatesLocation(lat, lon, saveAsDefault);
+}
+async function loadCoordinatesLocation(lat, lon, saveAsDefault=false){
+  lat=Number(lat); lon=Number(lon);
+  if(!isValidCoordinate(lat, lon)) throw new Error('Coordinates must be valid latitude and longitude values.');
+  const resolved=await reverseGeocode(lat, lon);
+  const name=resolved||`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`;
+  if(saveAsDefault) writeDefaultLocation({ mode:'gps', name, lat, lon, savedAt:new Date().toISOString() });
+  await loadCityByName(name, {lat, lon});
+  return {name, lat, lon};
+}
+function parseCoordinateSearch(query){
+  const text=String(query||'').trim();
+  const match=text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s+(-?\d+(?:\.\d+)?)\s*$/);
+  if(!match) return null;
+  const lat=Number(match[1]), lon=Number(match[2]);
+  return isValidCoordinate(lat, lon) ? {lat, lon} : null;
 }
 
 // ---------- Test Mode data resolution ----------
@@ -246,11 +371,19 @@ const hourTicksPlugin = { id: 'hourTicksPlugin', afterDatasetsDraw(c, args, opts
 Chart.register(hourTicksPlugin);
 
 // Past 4h hatching plugin
-const pastHoursHatchingPlugin = { id: 'pastHoursHatching', afterDatasetsDraw(chart){ const {ctx, chartArea, scales:{x,yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; if(labels.length === 0) return; const nowIdx = labels.findIndex(t => new Date(t).getTime() >= Date.now()); if(nowIdx <= 0) return; const pastStartIdx = Math.max(0, nowIdx - 4); if(pastStartIdx >= nowIdx) return; const xStart = x.getPixelForValue(pastStartIdx - 0.5); const xEnd = x.getPixelForValue(nowIdx + 0.5); const top = chartArea.top, bottom = chartArea.bottom; ctx.save(); ctx.beginPath(); ctx.rect(xStart, top, xEnd - xStart, bottom - top); ctx.clip(); ctx.globalAlpha = 0.12; ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; const spacing = 8; for(let offset = -300; offset < 300; offset += spacing){ ctx.beginPath(); ctx.moveTo(xStart + offset, top); ctx.lineTo(xEnd + offset, bottom); ctx.stroke(); } ctx.restore(); } };
+const pastHoursHatchingPlugin = { id: 'pastHoursHatching', afterDatasetsDraw(chart){ const {ctx, chartArea, scales:{x,yTemp}} = chart; if(!x || !yTemp || !chartArea) return; const labels = chart.data.labels || []; if(labels.length === 0) return; const currentIdx = findCurrentOrPreviousHourIndex(labels); if(currentIdx <= 0) return; const pastStartIdx = Math.max(0, currentIdx - 4); if(pastStartIdx >= currentIdx) return; const xStart = Math.max(chartArea.left, x.getPixelForValue(pastStartIdx)); const xEnd = Math.min(chartArea.right, x.getPixelForValue(currentIdx)); if(xEnd <= xStart) return; const top = chartArea.top, bottom = chartArea.bottom; ctx.save(); ctx.beginPath(); ctx.rect(xStart, top, xEnd - xStart, bottom - top); ctx.clip(); ctx.globalAlpha = 0.12; ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; const spacing = 8; const hatchWidth = xEnd - xStart; for(let offset = -hatchWidth - spacing; offset <= hatchWidth + spacing; offset += spacing){ ctx.beginPath(); ctx.moveTo(xStart + offset, top); ctx.lineTo(xEnd + offset, bottom); ctx.stroke(); } ctx.restore(); } };
 Chart.register(pastHoursHatchingPlugin);
 
 // Day labels plugin (top X axis)
-const dayLabelsPlugin = { id: 'dayLabels', afterDatasetsDraw(chart){ const {ctx, chartArea, scales:{x}} = chart; if(!x || !chartArea) return; const labels = chart.data.labels || []; if(labels.length === 0) return; const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const labelDates = labels.map(t => t.substring(0,10)); const dayBoundaries = {}; for(let i = 0; i < labels.length; i++){ const d = labelDates[i]; if(!(d in dayBoundaries)) dayBoundaries[d] = {firstIdx: i}; dayBoundaries[d].lastIdx = i; } ctx.save(); ctx.font = 'bold 11px system-ui,-apple-system,Segoe UI,Roboto,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = isDark ? '#d1d5db' : '#374151'; for(const [dateStr, {firstIdx, lastIdx}] of Object.entries(dayBoundaries)){ const d = new Date(dateStr + 'T00:00:00'); const dayName = dayNames[d.getDay()]; const xPos = (x.getPixelForValue(firstIdx - 0.5) + x.getPixelForValue(lastIdx + 0.5)) / 2; const y = chartArea.top - 4; if(xPos >= chartArea.left && xPos <= chartArea.right) ctx.fillText(dayName, xPos, y); } ctx.restore(); } };
+function shouldShowDateInDayLabel(dateStr){
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const labelDate = new Date(dateStr + 'T00:00:00');
+  const labelStart = new Date(labelDate.getFullYear(), labelDate.getMonth(), labelDate.getDate()).getTime();
+  const dayOffset = Math.round((labelStart - todayStart) / 86400000);
+  return dayOffset < 0 || dayOffset > 5;
+}
+const dayLabelsPlugin = { id: 'dayLabels', afterDatasetsDraw(chart){ const {ctx, chartArea, scales:{x}} = chart; if(!x || !chartArea) return; const labels = chart.data.labels || []; if(labels.length === 0) return; const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const labelDates = labels.map(t => t.substring(0,10)); const dayBoundaries = {}; for(let i = 0; i < labels.length; i++){ const d = labelDates[i]; if(!(d in dayBoundaries)) dayBoundaries[d] = {firstIdx: i}; dayBoundaries[d].lastIdx = i; } ctx.save(); ctx.font = 'bold 11px system-ui,-apple-system,Segoe UI,Roboto,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = isDark ? '#d1d5db' : '#374151'; for(const [dateStr, {firstIdx, lastIdx}] of Object.entries(dayBoundaries)){ const d = new Date(dateStr + 'T00:00:00'); const dayName = dayNames[d.getDay()]; const label = shouldShowDateInDayLabel(dateStr) ? `${dayName} ${d.getMonth()+1}/${d.getDate()}` : dayName; const xPos = (x.getPixelForValue(firstIdx - 0.5) + x.getPixelForValue(lastIdx + 0.5)) / 2; const y = chartArea.top - 4; if(xPos >= chartArea.left && xPos <= chartArea.right) ctx.fillText(label, xPos, y); } ctx.restore(); } };
 Chart.register(dayLabelsPlugin);
 
 // Wind display plugins - 4 different visualization modes
@@ -327,7 +460,11 @@ function updateVisibleHoursDisplay(valueSpan, hours, maxHours){ if(valueSpan) va
 function renderVisibleHoursTicks(totalHours){ const ticks=$("mainScrollScaleTicks"); const slider=$("mainScrollScale"); if(!ticks||!slider) return; const minHours=parseFloat(slider.min); const maxHours=parseFloat(slider.max); const span=Math.max(1, maxHours-minHours); ticks.textContent=''; getVisibleHoursStops(totalHours).forEach(stop=>{ if(stop<minHours||stop>maxHours) return; const tick=document.createElement('span'); tick.textContent=formatVisibleHoursLabel(stop, maxHours); tick.style.left=`${((stop-minHours)/span)*100}%`; ticks.appendChild(tick); }); }
 function getVisibleHoursForScale(scale, scrollerWidth, pxPerHour){ if(!scale || !scrollerWidth || !pxPerHour) return 0; return scrollerWidth / (pxPerHour * scale); }
 function getScaleForVisibleHours(visibleHours, scrollerWidth, pxPerHour){ if(!visibleHours || !scrollerWidth || !pxPerHour) return 1; return scrollerWidth / (pxPerHour * visibleHours); }
-function findNowIndex(labels){ const now=Date.now(); let firstGE=labels.findIndex(t=> new Date(t).getTime()>=now); if(firstGE>=0) return firstGE; let bestIdx=0,best=Infinity; for(let i=0;i<labels.length;i++){ const d=Math.abs(new Date(labels[i]).getTime()-now); if(d<best){best=d; bestIdx=i;} } return bestIdx; }
+function getXAxisMaxTicks(labelCount){ const canvas=$("weatherChart"); const scroller=$("chartScroll"); const container=document.querySelector('.chart-container'); const viewportWidth=scroller?.clientWidth || container?.clientWidth || window.innerWidth; const scrollWidth=parseFloat(canvas?.style?.width) || Number(canvas?.getAttribute?.('width')) || canvas?.getBoundingClientRect?.().width || viewportWidth; const width=(LAYOUT_MODE==='scroll') ? scrollWidth : viewportWidth; return Math.max(6, Math.min(labelCount, Math.floor(width/48))); }
+function labelTimeMs(label){ const ms=new Date(label).getTime(); return Number.isNaN(ms) ? null : ms; }
+function findCurrentOrPreviousHourIndex(labels, now=Date.now()){ if(!labels||!labels.length) return 0; let previousIdx=-1; for(let i=0;i<labels.length;i++){ const ms=labelTimeMs(labels[i]); if(ms==null) continue; if(ms<=now) previousIdx=i; else break; } if(previousIdx>=0) return previousIdx; return 0; }
+function getCurrentTimePosition(labels, now=Date.now()){ if(!labels||!labels.length) return null; const times=labels.map(labelTimeMs); for(let i=0;i<times.length;i++){ const ms=times[i]; if(ms==null) continue; if(now===ms) return i; if(now<ms){ if(i===0) return null; const prev=times[i-1]; if(prev==null || ms<=prev) return i-1; return (i-1)+((now-prev)/(ms-prev)); } } return null; }
+function findNowIndex(labels){ return findCurrentOrPreviousHourIndex(labels); }
 
 function updateSunTimesForNow(daily, fullLabels, nowIdxFull, fetchedAt){ try{ const el=$("sunTimes"); if(!el||!daily||!daily.length||!fullLabels||nowIdxFull==null) return; const dayKey=fullLabels[nowIdxFull].substring(0,10); const rec=daily.find(d=>d.date===dayKey) || daily[0]; const fetchedText = fetchedAt ? formatClock(fetchedAt) : "n/a"; el.textContent=`Forecast Updated: ${fetchedText} | Sunrise: ${formatClock(rec?.sunrise)} | Sunset: ${formatClock(rec?.sunset)}`; }catch(e){ console.warn("updateSunTimesForNow failed", e); } }
 
@@ -401,6 +538,7 @@ function buildChart(dataset){
   const wind   = hourly.map(h=>h.windMph ?? null);
   const windDir= hourly.map(h=>h.windDir ?? 0);
   const nowIdxVisible = nowIdxFull - startIdx;
+  const nowPositionVisible = getCurrentTimePosition(labels);
 
   applyLayout(labels);
 
@@ -478,10 +616,10 @@ function buildChart(dataset){
   if (yMin<=0 && 0<=yMax){ annotations['zero-line']={ type:'line', xScaleID:'x', yScaleID:'yTemp', yMin:0, yMax:0, borderColor:'rgba(96,165,250,0.85)', borderWidth:7, borderDash:[6,4] }; }
 
   // Now line
-  if(nowIdxVisible>=0 && nowIdxVisible<labels.length){ const nowValue=labels[nowIdxVisible]; const c=isDark?'rgba(234,179,8,0.95)':'rgba(217,119,6,0.95)'; annotations['now-line']={ type:'line', xScaleID:'x', yScaleID:'yTemp', xMin:nowValue, xMax:nowValue, borderColor:c, borderWidth:1.5 };
+  if(nowPositionVisible!=null && nowPositionVisible>=0 && nowPositionVisible<=labels.length-1){ const c=isDark?'rgba(234,179,8,0.95)':'rgba(217,119,6,0.95)'; annotations['now-line']={ type:'line', xScaleID:'x', yScaleID:'yTemp', xMin:nowPositionVisible, xMax:nowPositionVisible, borderColor:c, borderWidth:1.5 };
   }
 
-  const cw=document.querySelector('.chart-container')?.clientWidth || window.innerWidth; const approxMaxTicks=Math.max(6, Math.min(labels.length, Math.floor(cw/48)));
+  const approxMaxTicks=getXAxisMaxTicks(labels.length);
   const responsiveMode=(LAYOUT_MODE==='fit');
 
   const hideChartYAxis = (GRADIENT_MODE==='custom-scale');
@@ -565,6 +703,7 @@ function buildChart(dataset){
           svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}\u00B0, Precip: ${h.precipIn.toFixed(1)} mm, Snow: ${h.snowIn.toFixed(1)} mm, Rain: ${h.rainIn.toFixed(1)} mm, Est Snow: ${estHour} mm, Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}\u00B0, Day Accum (Liquid): ${day.liquid.toFixed(1)} mm, Day Accum (Snow): ${day.estSnow.toFixed(1)} mm`;
         }
         lastClickedIndex = i;
+        lastClickedTime = labels[i];
         setCursorAnnotation(chart, labels[i]);
         chart.update();
         scheduleMobileTooltipHide(chart);
@@ -744,26 +883,21 @@ function ensureAppMenu(){
 
   panel.innerHTML = `
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTheme"> Dark Theme</label>
-  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mApparent"> Feels Like Overlay</label>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mApparent"> Feels Like Line</label>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mWindLine"> Wind Speed Line</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
-  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mSunrise"> Sunrise/Sunset</label>
-  <div style="margin:8px 0 4px 0;font-weight:600;">Snow Ratio</div>
-  <select id="mSnow" style="width:100%;margin-bottom:8px"></select>
-  <div style="margin:8px 0 4px 0;font-weight:600;">Gradient Mode</div>
-  <select id="mGrad" style="width:100%;margin-bottom:8px"></select>
-  <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin:6px 0">
-    <label style="flex:1">Gradient Width</label>
-    <select id="mGradW" style="flex:1"></select>
-  </div>
-  <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin:6px 0">
-    <label style="flex:1">Reserve Left</label>
-    <select id="mGradPad" style="flex:1"></select>
-  </div>
-  <div style="margin:8px 0 4px 0;font-weight:600;">Wind Display</div>
-  <select id="mWind" style="width:100%;margin-bottom:8px"></select>
-  <button id="mCheck" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Check for Updates</button>
+  <details id="mLocationsMenu" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
+    <summary style="cursor:pointer;font-weight:700;user-select:none">Locations</summary>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      <button id="mSaveDefaultLocation" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save current location as default</button>
+      <label style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" id="mGpsDefault"> Use GPS location as default</label>
+      <button id="mSaveQuickLocation" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save current location to Quick List</button>
+      <button id="mEditQuickLocations" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Edit Quick List</button>
+    </div>
+  </details>
   <button id="mData" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Weather Data</button>
+  <button id="mCheck" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Check for Updates</button>
   <button id="mAbout" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">About</button>
   `;
 
@@ -774,22 +908,17 @@ function ensureAppMenu(){
 
   document.getElementById('btnContainer').appendChild(btn); document.body.appendChild(panel);
 
-  // Populate selects (do not close menu on change)
-  const mSnow=$("mSnow"); if(mSnow){ ['Auto','8','10','12','15'].forEach(v=>{ const o=document.createElement('option'); o.value=(v==='Auto'? 'Auto': String(v)); o.textContent=(v==='Auto'? 'Auto':`${v}:1`); mSnow.appendChild(o); }); mSnow.value = snowRatioMode; mSnow.addEventListener('change', ()=>{ snowRatioMode=mSnow.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
-
-  const mGrad=$("mGrad"); if(mGrad){ const modes=[['plugin','Plugin (reserve space)'],['dom','DOM Overlay'],['axis-overlay','Axis Overlay (on top)'],['custom-scale','Custom Scale (white on gradient)'],['separate-canvas','Separate Canvas (fixed)'],['off','Off']]; modes.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; mGrad.appendChild(o); }); mGrad.value = GRADIENT_MODE; mGrad.addEventListener('change', ()=>{ GRADIENT_MODE=mGrad.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
-
-  const mW=$("mGradW"); if(mW){ [38,64,96,128].forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=`${v}px`; mW.appendChild(o); }); mW.value=String(GRADIENT_WIDTH); mW.addEventListener('change', ()=>{ GRADIENT_WIDTH=parseInt(mW.value,10)||GRADIENT_WIDTH; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
-  const mPad=$("mGradPad"); if(mPad){ [0,40,80,120].forEach(v=>{ const o=document.createElement('option'); o.value=String(v); o.textContent=`${v}px`; mPad.appendChild(o); }); mPad.value=String(GRADIENT_EXTRA_LEFT); mPad.addEventListener('change', ()=>{ GRADIENT_EXTRA_LEFT=parseInt(mPad.value,10)||GRADIENT_EXTRA_LEFT; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
-
-  const mWind=$("mWind"); if(mWind){ const windModes=[['off','Off'],['line','Wind Speed Line'],['barbs','Wind Barbs'],['arrows','Wind Arrows'],['overlay','Wind Color Overlay']]; windModes.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; mWind.appendChild(o); }); mWind.value = WIND_DISPLAY_MODE; mWind.addEventListener('change', ()=>{ WIND_DISPLAY_MODE=mWind.value; if(currentDataset) buildChart(currentDataset); /* keep menu open */ }); }
-
-  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mSunrise=$("mSunrise"), mData=$("mData"), mCheck=$("mCheck");
+  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mWindLine=$("mWindLine"), mData=$("mData"), mCheck=$("mCheck");
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
   if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); updateScrollScaleVisibility(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
-  if(mSunrise){ mSunrise.checked = SHOW_SUNRISE_SUNSET; mSunrise.addEventListener('change', ()=>{ SHOW_SUNRISE_SUNSET=!SHOW_SUNRISE_SUNSET; if(currentDataset) buildChart(currentDataset); mSunrise.checked=SHOW_SUNRISE_SUNSET; /* keep menu open */ }); }
+  if(mWindLine){ mWindLine.checked = WIND_SPEED_LINE_ENABLED; mWindLine.addEventListener('change', ()=>{ toggleWindSpeedLine(); mWindLine.checked=WIND_SPEED_LINE_ENABLED; /* keep menu open */ }); }
+  syncGpsDefaultCheckbox();
+  $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
+  $("mGpsDefault")?.addEventListener('change', (e)=>{ saveGpsDefault(!!e.target.checked); /* keep menu open */ });
+  $("mSaveQuickLocation")?.addEventListener('click', ()=>{ saveCurrentLocationToQuickList(); /* keep menu open */ });
+  $("mEditQuickLocations")?.addEventListener('click', ()=>{ showQuickListEditor(); /* keep menu open */ });
   if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
 
@@ -829,74 +958,162 @@ function ensureDataModal(){
   const modal=document.createElement('div'); modal.id='dataModal'; Object.assign(modal.style,{position:'fixed',inset:'0',background:'rgba(0,0,0,0.35)',display:'none',zIndex:'4000'});
   const panel=document.createElement('div'); panel.id='dataPanel'; Object.assign(panel.style,{position:'absolute',left:'50%',top:'10%',transform:'translateX(-50%)',width:'80%',maxWidth:'1200px',maxHeight:'70%',overflow:'hidden',background:isDark?'#0b1220':'#ffffff',color:isDark?'#e5e7eb':'#111827',border:'1px solid rgba(0,0,0,0.2)',borderRadius:'10px',boxShadow:'0 10px 30px rgba(0,0,0,0.35)'});
   const head=document.createElement('div'); head.style.display='flex'; head.style.justifyContent='space-between'; head.style.alignItems='center'; head.style.padding='8px 12px'; head.style.borderBottom='1px solid rgba(0,0,0,0.15)'; head.innerHTML=`<div style="font-weight:600">Hourly Weather Data</div>`;
-  const close=document.createElement('button'); close.textContent='✕'; Object.assign(close.style,{border:'1px solid rgba(0,0,0,0.2)',borderRadius:'6px',background:'transparent',color:'inherit',cursor:'pointer',height:'28px',width:'32px'}); close.addEventListener('click', ()=> modal.style.display='none'); head.appendChild(close);
+  const actions=document.createElement('div'); Object.assign(actions.style,{display:'flex',alignItems:'center',gap:'8px'});
+  const nowBtn=document.createElement('button'); nowBtn.id='weatherDataNowBtn'; nowBtn.textContent='Now'; Object.assign(nowBtn.style,{border:'1px solid rgba(0,0,0,0.2)',borderRadius:'6px',background:isDark?'#1f2937':'#f3f4f6',color:'inherit',cursor:'pointer',height:'28px',padding:'0 10px'});
+  const close=document.createElement('button'); close.textContent='✕'; Object.assign(close.style,{border:'1px solid rgba(0,0,0,0.2)',borderRadius:'6px',background:'transparent',color:'inherit',cursor:'pointer',height:'28px',width:'32px'}); close.addEventListener('click', ()=> modal.style.display='none'); actions.appendChild(nowBtn); actions.appendChild(close); head.appendChild(actions);
   const wrap=document.createElement('div'); wrap.id='dataTableWrap'; Object.assign(wrap.style,{overflowX:'auto',overflowY:'auto',maxHeight:'calc(70vh - 48px)'});
   const inner=document.createElement('div'); inner.id='dataTableInner'; inner.style.padding='10px'; wrap.appendChild(inner);
   panel.appendChild(head); panel.appendChild(wrap); modal.appendChild(panel); document.body.appendChild(modal);
   modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.style.display='none'; });
+  window.addEventListener('resize', applyWeatherDataModalLayout);
+  window.addEventListener('orientationchange', applyWeatherDataModalLayout);
   return modal;
 }
+
+function applyWeatherDataModalLayout(){
+  const modal=$("dataModal"), panel=$("dataPanel"), wrap=$("dataTableWrap");
+  if(!modal || !panel || !wrap) return;
+  const mobile=window.matchMedia?.('(max-width: 760px), (pointer: coarse)')?.matches || window.innerWidth<=760;
+  if(mobile){
+    Object.assign(panel.style,{left:'0',top:'0',transform:'none',width:'100vw',height:'100dvh',maxWidth:'none',maxHeight:'none',borderRadius:'0',border:'0'});
+    Object.assign(wrap.style,{maxHeight:'calc(100dvh - 45px)',height:'calc(100dvh - 45px)'});
+  } else {
+    Object.assign(panel.style,{left:'50%',top:'10%',transform:'translateX(-50%)',width:'80%',height:'auto',maxWidth:'1200px',maxHeight:'70%',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.2)'});
+    Object.assign(wrap.style,{maxHeight:'calc(70vh - 48px)',height:'auto'});
+  }
+}
+
+function escapeHtml(value){ return String(value ?? '').replace(/[&<>"']/g, ch=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }
+function getWeatherSymbol(hour){
+  const precip=hour.precipIn||0, rain=hour.rainIn||0, snow=hour.snowIn||0, temp=hour.temperatureF;
+  if(snow>0.0127 || (precip>0.0127 && temp<=32)) return '❄';
+  if(rain>0.0127 || precip>0.0127) return '☔';
+  const h=new Date(hour.time).getHours();
+  return (h>=7 && h<19) ? '☀' : '☁';
+}
+function windArrowSymbol(directionDeg){
+  if(directionDeg==null || Number.isNaN(Number(directionDeg))) return null;
+  const arrows=['↑','↗','→','↘','↓','↙','←','↖'];
+  return arrows[Math.round((((Number(directionDeg)%360)+360)%360)/45)%8];
+}
+function formatWindArrow(directionDeg, windMph){
+  const arrow=windArrowSymbol(directionDeg);
+  if(!arrow) return { html:'N/A', text:'N/A' };
+  const speed=Number(windMph)||0;
+  const size=Math.max(13, Math.min(28, 13 + speed*0.55));
+  const deg=Math.round(Number(directionDeg));
+  return { html:`<span style="display:inline-block;font-size:${size.toFixed(0)}px;line-height:1" title="${deg}°">${arrow}</span>`, text:`${arrow} ${deg}°` };
+}
+function getSelectedWeatherDataColumn(hours){
+  if(!hours?.length) return 0;
+  if(lastClickedTime){
+    const clicked=hours.findIndex(h=>h.time===lastClickedTime);
+    if(clicked>=0) return clicked;
+  }
+  return findCurrentOrPreviousHourIndex(hours.map(h=>h.time));
+}
+function formatWeatherDataHeader(time, lineBreak='\n'){
+  const d=new Date(time);
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const hr=d.getHours();
+  const ap=hr>=12?'PM':'AM';
+  const h12=(hr%12)||12;
+  return `${days[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}${lineBreak}${h12} ${ap}`;
+}
+function isWeatherDataNightHour(time, daily){
+  const dayKey=String(time).substring(0,10);
+  const day=(daily||[]).find(d=>d.date===dayKey);
+  if(!day?.sunrise || !day?.sunset) return false;
+  const ms=new Date(time).getTime();
+  const sunriseMs=new Date(day.sunrise).getTime();
+  const sunsetMs=new Date(day.sunset).getTime();
+  if([ms,sunriseMs,sunsetMs].some(Number.isNaN)) return false;
+  return ms < sunriseMs || ms >= sunsetMs;
+}
+function highlightWeatherDataColumn(table, col){
+  if(!table || col==null) return;
+  table.querySelectorAll('th,td').forEach(cell=>{
+    cell.style.background = cell.dataset.baseBg || '';
+    cell.style.color = cell.dataset.baseColor || '';
+  });
+  const th=table.querySelector(`.weather-col-header[data-col="${col}"]`);
+  if(th){ th.style.background='#fef3c7'; th.style.color='#78350f'; }
+  table.querySelectorAll(`td[data-col="${col}"]`).forEach(cell=>{
+    cell.style.background='#fef3c7';
+    cell.style.color='#78350f';
+  });
+}
+function centerWeatherDataColumn(table, col){
+  const wrap=$("dataTableWrap");
+  const th=table?.querySelector(`.weather-col-header[data-col="${col}"]`);
+  if(!wrap || !th) return;
+  const left=th.offsetLeft - (wrap.clientWidth / 2) + (th.offsetWidth / 2);
+  wrap.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+}
+function cleanClipboardCell(value){ return String(value ?? '').replace(/[\r\n]+/g, ' '); }
 
 function showWeatherData(){
   const modal=ensureDataModal(); const inner=$("dataTableInner"); if(!inner) return;
   const ds=currentDataset; if(!ds||!ds.hourly){ alert('No dataset loaded'); return; }
   const H=ds.hourly; const cols=H.map(h=>h.time);
   const fields=[
-    ['Temp (\u00B0F)','temperatureF',(v)=>v!=null? v.toFixed(1):'N/A'],
-    ['Feels Like (\u00B0F)','apparentF',(v)=>v!=null? v.toFixed(1):'N/A'],
-    ['Precip (mm)','precipIn',(v)=>v!=null? v.toFixed(1):'0.0'],
-    ['Rain (mm)','rainIn',(v)=>v!=null? v.toFixed(1):'0.0'],
-    ['Snow (mm)','snowIn',(v)=>v!=null? v.toFixed(1):'0.0'],
-    ['Precip Type','precipType',(v)=>v??'none'],
-    ['Wind (mph)','windMph',(v)=>v!=null? v.toFixed(1):'N/A'],
-    ['Wind Dir (\u00B0)','windDir',(v)=>v!=null? Math.round(v):'N/A'],
-    ['Chance (%)','precipProb',(v)=>v!=null? v:'N/A']
+    { label:'Weather', html:h=>`<span style="font-size:18px;line-height:1">${getWeatherSymbol(h)}</span>`, copy:h=>getWeatherSymbol(h), align:'center' },
+    { label:'Temp (\u00B0F)', html:h=>h.temperatureF!=null? h.temperatureF.toFixed(1):'N/A', copy:h=>h.temperatureF!=null? h.temperatureF.toFixed(1):'N/A', bg:h=>h.temperatureF!=null?TempColorBarPlugin.colorAtTemp(h.temperatureF):'', color:h=>h.temperatureF!=null?'#111827':'' },
+    { label:'Feels Like (\u00B0F)', html:h=>h.apparentF!=null? h.apparentF.toFixed(1):'N/A', copy:h=>h.apparentF!=null? h.apparentF.toFixed(1):'N/A' },
+    { label:'Chance (%)', html:h=>h.precipProb!=null? h.precipProb:'N/A', copy:h=>h.precipProb!=null? h.precipProb:'N/A' },
+    { label:'Precip (mm)', html:h=>h.precipIn!=null? h.precipIn.toFixed(1):'0.0', copy:h=>h.precipIn!=null? h.precipIn.toFixed(1):'0.0' },
+    { label:'Rain (mm)', html:h=>h.rainIn!=null? h.rainIn.toFixed(1):'0.0', copy:h=>h.rainIn!=null? h.rainIn.toFixed(1):'0.0' },
+    { label:'Snow (mm)', html:h=>h.snowIn!=null? h.snowIn.toFixed(1):'0.0', copy:h=>h.snowIn!=null? h.snowIn.toFixed(1):'0.0' },
+    { label:'Precip Type', html:h=>escapeHtml(h.precipType??'none'), copy:h=>h.precipType??'none' },
+    { label:'Wind (mph)', html:h=>h.windMph!=null? h.windMph.toFixed(1):'N/A', copy:h=>h.windMph!=null? h.windMph.toFixed(1):'N/A' },
+    { label:'Wind Dir', html:h=>formatWindArrow(h.windDir, h.windMph).html, copy:h=>formatWindArrow(h.windDir, h.windMph).text, align:'center' }
   ];
   // Add Copy button
   let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button id="copyWeatherDataBtn" style="padding:4px 12px;border-radius:5px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;font-size:13px;">Copy Table</button></div>';
   html += '<table id="weatherDataTable" style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif">';
   // Header row
-  html += '<tr><th style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151">Metric</th>';
+  html += '<tr><th data-base-bg="#111827" data-base-color="#e5e7eb" style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151">Metric</th>';
   cols.forEach((t, colIdx) => {
-    const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; const label=`${mon}/${day} ${h12}${ap}`;
-    html += `<th class="weather-col-header" data-col="${colIdx}" style="padding:6px 8px;border:1px solid #374151;white-space:nowrap;cursor:pointer;user-select:none;">${label}</th>`;
+    const label=formatWeatherDataHeader(t, '<br>');
+    const night=isWeatherDataNightHour(t, ds.daily);
+    const bg=night ? '#e5e7eb' : '';
+    const color=night ? '#111827' : '';
+    html += `<th class="weather-col-header" data-col="${colIdx}" data-base-bg="${bg}" data-base-color="${color}" style="padding:6px 8px;border:1px solid #374151;white-space:nowrap;cursor:pointer;user-select:none;line-height:1.25;${bg?`background:${bg};`:''}${color?`color:${color};`:''}">${label}</th>`;
   });
   html += '</tr>';
   // Data rows
-  fields.forEach(([label, key, fmt]) => {
+  fields.forEach(field => {
     html += `<tr>`;
-    html += `<td style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600">${label}</td>`;
+    html += `<td data-base-bg="#111827" data-base-color="#e5e7eb" style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151;font-weight:600">${field.label}</td>`;
     H.forEach((h, colIdx) => {
-      const v=h[key];
-      html += `<td data-col="${colIdx}" style="padding:6px 8px;border:1px solid #374151;text-align:right">${fmt(v)}</td>`;
+      const bg=field.bg?.(h)||'';
+      const color=field.color?.(h)||'';
+      const align=field.align||'right';
+      const baseAttrs=`data-base-bg="${escapeHtml(bg)}" data-base-color="${escapeHtml(color)}"`;
+      const style=`padding:6px 8px;border:1px solid #374151;text-align:${align};${bg?`background:${bg};`:''}${color?`color:${color};`:''}`;
+      html += `<td data-col="${colIdx}" ${baseAttrs} style="${style}">${field.html(h)}</td>`;
     });
     html += '</tr>';
   });
   html += '</table>';
   inner.innerHTML = html;
 
-  // Highlight column on header click
+  // Highlight column on any table cell click
   const table = inner.querySelector('#weatherDataTable');
-  let lastCol = null;
   table?.addEventListener('click', function(e) {
-    const th = e.target.closest('.weather-col-header');
-    if (!th) return;
-    const col = th.getAttribute('data-col');
-    // Remove previous highlights
-    table.querySelectorAll('th,td').forEach(cell => {
-      cell.style.background = '';
-      cell.style.color = '';
-    });
-    // Softer highlight for header
-    th.style.background = '#f3f4f6'; // very light gray
-    th.style.color = '#374151'; // dark gray text
-    // Softer highlight for column cells
-    table.querySelectorAll(`td[data-col="${col}"]`).forEach(cell => {
-      cell.style.background = '#f3f4f6'; // very light gray
-      cell.style.color = '#374151'; // dark gray text
-    });
-    lastCol = col;
+    const cell = e.target.closest('[data-col]');
+    if (!cell || !table.contains(cell)) return;
+    const col=cell.getAttribute('data-col');
+    highlightWeatherDataColumn(table, col);
   });
+  const selectedCol=getSelectedWeatherDataColumn(H);
+  highlightWeatherDataColumn(table, selectedCol);
+  const nowBtn=$("weatherDataNowBtn");
+  if(nowBtn) nowBtn.onclick=()=>{
+    const nowCol=findCurrentOrPreviousHourIndex(H.map(h=>h.time));
+    highlightWeatherDataColumn(table, nowCol);
+    centerWeatherDataColumn(table, nowCol);
+  };
 
   // Copy to clipboard button
   const copyBtn = inner.querySelector('#copyWeatherDataBtn');
@@ -904,12 +1121,10 @@ function showWeatherData(){
     // Build tab-separated values for Excel
     let tsv = '';
     // Header row
-    tsv += 'Metric\t' + cols.map(t => {
-      const d=new Date(t); const mon=d.getMonth()+1, day=d.getDate(); const hr=d.getHours(); const ap=hr>=12?'PM':'AM'; const h12=(hr%12)||12; return `${mon}/${day} ${h12}${ap}`;
-    }).join('\t') + '\n';
+    tsv += 'Metric\t' + cols.map(t => cleanClipboardCell(formatWeatherDataHeader(t))).join('\t') + '\n';
     // Data rows
-    fields.forEach(([label, key, fmt]) => {
-      tsv += label + '\t' + H.map(h => fmt(h[key])).join('\t') + '\n';
+    fields.forEach(field => {
+      tsv += cleanClipboardCell(field.label) + '\t' + H.map(h => cleanClipboardCell(field.copy(h))).join('\t') + '\n';
     });
     // Copy to clipboard
     navigator.clipboard.writeText(tsv).then(() => {
@@ -920,6 +1135,176 @@ function showWeatherData(){
       setTimeout(()=>{ copyBtn.textContent = 'Copy Table'; }, 1200);
     });
   });
+  modal.style.display='block';
+  applyWeatherDataModalLayout();
+  requestAnimationFrame(()=>centerWeatherDataColumn(table, selectedCol));
+}
+
+function showQuickListEditor(){
+  let locations=readSavedLocations().map(loc=>({...loc}));
+  let editorDefault=readDefaultLocation();
+  let modal=$("quickListEditorModal");
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='quickListEditorModal';
+    Object.assign(modal.style,{position:'fixed',inset:'0',background:'rgba(0,0,0,0.45)',display:'none',zIndex:'4500',padding:'16px',boxSizing:'border-box'});
+    modal.innerHTML=`
+      <div id="quickListEditorPanel" style="display:flex;flex-direction:column;margin:0 auto;width:min(920px,100%);height:calc(100vh - 32px);max-height:820px;overflow:hidden;background:${isDark?'#0b1220':'#ffffff'};color:${isDark?'#e5e7eb':'#111827'};border:1px solid rgba(0,0,0,0.25);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.35)">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid rgba(107,114,128,0.35)">
+          <div style="font-weight:700">Edit Quick List</div>
+          <button id="quickListClose" style="border:1px solid rgba(107,114,128,0.5);border-radius:6px;background:transparent;color:inherit;cursor:pointer;height:28px;width:32px">x</button>
+        </div>
+        <div style="padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid rgba(107,114,128,0.25)">
+          <button id="quickGpsDefaultStar" style="height:32px;border:0;background:transparent;color:#facc15;cursor:pointer;padding:0 10px;font-size:1.15rem" title="Use GPS location as default">☆</button>
+          <span style="align-self:center;margin-right:8px">Use GPS location as default</span>
+          <button id="quickSortAlpha" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort A-Z</button>
+          <button id="quickSortWestEast" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort West-East</button>
+          <button id="quickSortNorthSouth" style="height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Sort North-South</button>
+        </div>
+        <div id="quickListRows" style="padding:10px 12px;overflow:auto;flex:1;min-height:0"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 12px;border-top:1px solid rgba(107,114,128,0.35);flex:0 0 auto;background:inherit">
+          <button id="quickListCancel" style="height:34px;border-radius:6px;border:1px solid #374151;background:transparent;color:inherit;cursor:pointer;padding:0 14px">Cancel</button>
+          <button id="quickListSave" style="height:34px;border-radius:6px;border:1px solid #2563eb;background:#2563eb;color:#fff;cursor:pointer;padding:0 14px">Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e=>{ if(e.target===modal) modal.style.display='none'; });
+  }
+  const rows=$("quickListRows");
+  let dragState=null;
+  function isDefaultLoc(loc){ return editorDefault?.mode==='saved' && editorDefault.locationId===loc.id; }
+  function updateGpsStar(){ const star=$("quickGpsDefaultStar"); if(star){ const active=editorDefault?.mode==='gps'; star.textContent=active?'★':'☆'; star.style.opacity=active?'1':'0.5'; star.setAttribute('aria-pressed', active?'true':'false'); } }
+  function clearDropIndicators(){
+    rows?.querySelectorAll('[data-index]').forEach(row=>{
+      row.style.borderBottom='1px solid rgba(107,114,128,0.22)';
+      row.style.boxShadow='none';
+    });
+  }
+  function getDropIndex(clientY){
+    const rowEls=[...rows.querySelectorAll('[data-index]')];
+    if(!rowEls.length) return 0;
+    for(const row of rowEls){
+      const rect=row.getBoundingClientRect();
+      if(clientY < rect.top + rect.height / 2) return Number(row.dataset.index);
+    }
+    return rowEls.length;
+  }
+  function showDropIndicator(dropIndex){
+    clearDropIndicators();
+    const rowEls=[...rows.querySelectorAll('[data-index]')];
+    const color=isDark ? '#facc15' : '#2563eb';
+    if(dropIndex >= rowEls.length){
+      const last=rowEls[rowEls.length - 1];
+      if(last) last.style.boxShadow=`inset 0 -3px 0 ${color}`;
+      return;
+    }
+    const target=rowEls[dropIndex];
+    if(target) target.style.boxShadow=`inset 0 3px 0 ${color}`;
+  }
+  function moveLocationToDrop(from, dropIndex){
+    if(from<0 || from>=locations.length) return;
+    let insertAt=Math.max(0, Math.min(dropIndex, locations.length));
+    if(insertAt>from) insertAt--;
+    if(insertAt===from) return;
+    const [item]=locations.splice(from,1);
+    locations.splice(insertAt,0,item);
+  }
+  function render(){
+    if(!rows) return;
+    rows.textContent='';
+    updateGpsStar();
+    if(!locations.length){
+      const empty=document.createElement('div');
+      empty.textContent='No saved locations.';
+      empty.style.opacity='0.75';
+      rows.appendChild(empty);
+      return;
+    }
+    locations.forEach((loc, index)=>{
+      const row=document.createElement('div');
+      row.dataset.index=String(index);
+      Object.assign(row.style,{display:'grid',gridTemplateColumns:'34px 1fr auto auto',gap:'8px',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(107,114,128,0.22)',boxShadow:'none',touchAction:'none'});
+      const star=document.createElement('button');
+      const defaultLoc=isDefaultLoc(loc);
+      star.textContent=defaultLoc?'★':'☆';
+      star.title='Set as default location';
+      Object.assign(star.style,{height:'30px',width:'30px',border:'0',background:'transparent',color:'#facc15',cursor:'pointer',fontSize:'1.15rem',opacity:defaultLoc?'1':'0.5'});
+      star.addEventListener('click', ()=>{ editorDefault={mode:'saved',locationId:loc.id,name:loc.name,lat:loc.lat,lon:loc.lon,savedAt:new Date().toISOString()}; render(); });
+      const input=document.createElement('input');
+      input.value=loc.name;
+      input.title=`${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}`;
+      Object.assign(input.style,{minWidth:'0',height:'30px',boxSizing:'border-box',borderRadius:'6px',border:'1px solid rgba(107,114,128,0.5)',padding:'0 8px',background:'#ffffff',color:'#111827'});
+      input.addEventListener('input', ()=>{ locations[index].name=input.value; });
+      const coords=document.createElement('div');
+      coords.textContent=`${loc.lat.toFixed(3)}, ${loc.lon.toFixed(3)}`;
+      Object.assign(coords.style,{fontSize:'0.78rem',opacity:'0.75',whiteSpace:'nowrap'});
+      const controls=document.createElement('div');
+      Object.assign(controls.style,{display:'flex',gap:'4px'});
+      [['Drag','drag'],['Delete','delete']].forEach(([label, action])=>{
+        const b=document.createElement('button');
+        b.textContent=label;
+        Object.assign(b.style,{height:'28px',borderRadius:'6px',border:'1px solid #374151',background:action==='delete'?'#7f1d1d':'#1f2937',color:'#e5e7eb',cursor:action==='drag'?'grab':'pointer',touchAction:'none'});
+        b.addEventListener('click', ()=>{
+          if(action==='delete'){ locations.splice(index,1); render(); }
+        });
+        if(action==='drag'){
+          b.addEventListener('pointerdown', e=>{
+            e.preventDefault();
+            b.setPointerCapture?.(e.pointerId);
+            dragState={from:index,dropIndex:index,pointerId:e.pointerId};
+            row.style.opacity='0.55';
+            b.style.cursor='grabbing';
+            showDropIndicator(index);
+          });
+          b.addEventListener('pointermove', e=>{
+            if(!dragState || dragState.pointerId!==e.pointerId) return;
+            const dropIndex=getDropIndex(e.clientY);
+            dragState.dropIndex=dropIndex;
+            showDropIndicator(dropIndex);
+          });
+          const endDrag=e=>{
+            if(dragState?.pointerId===e.pointerId){
+              moveLocationToDrop(dragState.from, dragState.dropIndex);
+              dragState=null;
+              b.style.cursor='grab';
+              clearDropIndicators();
+              render();
+            }
+          };
+          b.addEventListener('pointerup', endDrag);
+          b.addEventListener('pointercancel', endDrag);
+        }
+        controls.appendChild(b);
+      });
+      row.appendChild(star);
+      row.appendChild(input);
+      row.appendChild(coords);
+      row.appendChild(controls);
+      rows.appendChild(row);
+    });
+  }
+  $("quickListClose").onclick=() => { modal.style.display='none'; };
+  $("quickListCancel").onclick=() => { modal.style.display='none'; };
+  $("quickGpsDefaultStar").onclick=() => { editorDefault={mode:'gps',savedAt:new Date().toISOString()}; render(); };
+  $("quickSortAlpha").onclick=() => { locations.sort((a,b)=>a.name.localeCompare(b.name)); render(); };
+  $("quickSortWestEast").onclick=() => { locations.sort((a,b)=>a.lon-b.lon); render(); };
+  $("quickSortNorthSouth").onclick=() => { locations.sort((a,b)=>b.lat-a.lat); render(); };
+  $("quickListSave").onclick=() => {
+    const cleaned=locations.map(normalizeLocation).filter(Boolean);
+    writeSavedLocations(cleaned);
+    if(editorDefault?.mode==='gps') writeDefaultLocation({...editorDefault,savedAt:new Date().toISOString()});
+    else if(editorDefault?.mode==='saved' && editorDefault.locationId && cleaned.some(loc=>loc.id===editorDefault.locationId)){
+      const loc=cleaned.find(item=>item.id===editorDefault.locationId);
+      writeDefaultLocation({mode:'saved',locationId:loc.id,name:loc.name,lat:loc.lat,lon:loc.lon,savedAt:new Date().toISOString()});
+    } else {
+      const def=readDefaultLocation();
+      if(def?.mode==='saved' && def.locationId && !cleaned.some(loc=>loc.id===def.locationId)) clearDefaultLocation();
+    }
+    populateQuickSelectSorted();
+    syncGpsDefaultCheckbox();
+    modal.style.display='none';
+  };
+  render();
   modal.style.display='block';
 }
 
@@ -991,7 +1376,8 @@ function setupRangeButtonLongPress(){
 
 // ---------- Other UI wiring ----------
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
-function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const qs=$("quickSelect"); const name=qs?.value||"Moon Township, PA"; const coords=QUICK_SELECT_CITIES[name]||QUICK_SELECT_CITIES["Moon Township, PA"]; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
+function toggleWindSpeedLine(){ WIND_SPEED_LINE_ENABLED=!WIND_SPEED_LINE_ENABLED; localStorage.setItem(WIND_SPEED_LINE_STORAGE_KEY, JSON.stringify(WIND_SPEED_LINE_ENABLED)); WIND_DISPLAY_MODE=WIND_SPEED_LINE_ENABLED?'line':'off'; if(currentDataset) buildChart(currentDataset); }
+function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const fallback=readSavedLocations()[0] || normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']}); const name=currentCityName||fallback.name; const coords=(currentLocationLat!=null&&currentLocationLon!=null)?{lat:currentLocationLat,lon:currentLocationLon}:fallback; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
   pastDays = 0;
   LAYOUT_MODE = 'fit'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=false;
@@ -999,7 +1385,7 @@ function toggleRange(){
 }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; updateLayoutButtonLabel(); if(currentDataset) buildChart(currentDataset); }
 function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.textContent = (LAYOUT_MODE==='scroll') ? 'Layout: Scroll' : 'Layout: Fit'; }
-function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; if(currentDataset) buildChart(currentDataset); }
+function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; localStorage.setItem(FEELS_LIKE_LINE_STORAGE_KEY, JSON.stringify(APPARENT_OVERLAY_ENABLED)); if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
 function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
 function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const maxVisibleHours=parseFloat(slider.max); const desiredVisibleHours=snapVisibleHours(parseFloat(slider.value), maxVisibleHours); slider.value=String(desiredVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
@@ -1039,8 +1425,8 @@ function openChartCompare(){
     alert('Unable to open Chart Compare. The forecast dataset could not be saved in this browser session.');
   }
 }
-async function loadCityByName(cityName, coords){ try{ const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
-async function handleQuickSelectChange(){ const qs=$("quickSelect"); const name=qs ? qs.value : null; if(!name) return; const coords=QUICK_SELECT_CITIES[name]; if(!coords) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(name, coords); if(qs) qs.value=''; }
+async function loadCityByName(cityName, coords){ try{ lastClickedIndex=null; lastClickedTime=null; const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
+async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs ? qs.value : null; if(!id) return; const loc=findSavedLocationById(id); if(!loc) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(loc.name, loc); if(qs) qs.value=''; }
 
 function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
   body.maximized .app-header, body.maximized .summary-box, body.maximized .app-footer, body.maximized #testModeBanner, body.maximized #statusLine, body.maximized #matchModal, body.maximized #versionChip { display: none !important; }
@@ -1058,23 +1444,99 @@ function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; 
 
 
 // ---------- Reverse Geocoding ----------
+function isValidCoordinate(lat, lon){
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+}
+function reverseGeocodeCacheKey(lat, lon){ return `city-first-zipfix:${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`; }
+function readReverseGeocodeCache(){
+  const raw=readStoredJson(REVERSE_GEOCODE_CACHE_STORAGE_KEY);
+  return raw && typeof raw==='object' && !Array.isArray(raw) ? raw : {};
+}
+function writeReverseGeocodeCache(cache){ writeStoredJson(REVERSE_GEOCODE_CACHE_STORAGE_KEY, cache || {}); }
+function uniqueTruthy(parts){ return parts.filter(Boolean).filter((value, index, arr)=>arr.indexOf(value)===index); }
+function correctReverseGeocodePostal({lat, lon, city, postal}){
+  const cityText=String(city||'').toLowerCase();
+  const isKnownMoonArea=/moon|moon twp|moon township|carnot|coraopolis/.test(cityText);
+  const nearMoon=Math.abs(Number(lat)-40.520) <= 0.035 && Math.abs(Number(lon)-(-80.241)) <= 0.045;
+  if(nearMoon && isKnownMoonArea) return '15108';
+  return postal || null;
+}
+function buildReverseGeocodeLabel({lat, lon, street, city, state, postal}){
+  const place=city || street || null;
+  postal=correctReverseGeocodePostal({lat, lon, city:place, postal});
+  const region=uniqueTruthy([state, postal]).join(' ');
+  if(place && region) return `${place}, ${region}`;
+  if(place) return place;
+  return null;
+}
+function formatBigDataCloudReverseGeocode(j, lat, lon){
+  const info=[...(j?.localityInfo?.informative||[]), ...(j?.localityInfo?.administrative||[])];
+  const streetRec=info.find(item=>{
+    const type=String(item?.type||item?.description||'').toLowerCase();
+    return type.includes('street') || type.includes('road') || type.includes('route') || type.includes('neighbourhood') || type.includes('neighborhood');
+  });
+  return buildReverseGeocodeLabel({
+    lat, lon,
+    street: streetRec?.name || j?.road || j?.street || j?.streetName || j?.thoroughfare || null,
+    city: j?.city || j?.locality || null,
+    state: j?.principalSubdivisionCode?.replace(/^[A-Z]+-/,'') || j?.principalSubdivision || j?.countryCode || null,
+    postal: j?.postcode || j?.postalCode || j?.zipcode || j?.zipCode || null
+  });
+}
+function formatNominatimReverseGeocode(j, lat, lon){
+  const a=j?.address || {};
+  return buildReverseGeocodeLabel({
+    lat, lon,
+    street: a.road || a.pedestrian || a.footway || a.path || a.cycleway || a.neighbourhood || a.neighborhood || null,
+    city: a.city || a.town || a.village || a.hamlet || a.municipality || a.suburb || a.county || null,
+    state: a.state || a.region || null,
+    postal: a.postcode || null
+  });
+}
 async function reverseGeocode(lat, lon){
-  try{
-    const url=`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
-    const res=await fetch(url); if(!res.ok) return null;
-    const j=await res.json();
-    const city=j.city||j.locality||j.principalSubdivision||null;
-    const state=j.principalSubdivisionCode?.replace(/^[A-Z]+-/,'')||j.countryCode||null;
-    if(city && state) return `${city}, ${state}`;
-    if(city) return city;
+  lat=Number(lat); lon=Number(lon);
+  if(!isValidCoordinate(lat, lon)){
+    console.warn('[ReverseGeocode] Skipping lookup: invalid coordinates', {lat, lon});
     return null;
-  }catch(e){ return null; }
+  }
+  const cacheKey=reverseGeocodeCacheKey(lat, lon);
+  const cache=readReverseGeocodeCache();
+  if(cache[cacheKey]?.label) return cache[cacheKey].label;
+
+  try{
+    const params=new URLSearchParams({latitude:String(lat), longitude:String(lon), localityLanguage:'en'});
+    const res=await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`);
+    if(res.ok){
+      const label=formatBigDataCloudReverseGeocode(await res.json(), lat, lon);
+      if(label){ cache[cacheKey]={label, provider:'bigdatacloud', savedAt:new Date().toISOString()}; writeReverseGeocodeCache(cache); return label; }
+      console.warn('[ReverseGeocode] BigDataCloud returned no usable label.');
+    } else {
+      console.warn(`[ReverseGeocode] BigDataCloud failed: ${res.status} ${res.statusText}`);
+    }
+  }catch(e){
+    console.warn('[ReverseGeocode] BigDataCloud request failed:', e);
+  }
+
+  try{
+    const params=new URLSearchParams({format:'jsonv2', lat:String(lat), lon:String(lon), addressdetails:'1', zoom:'18', 'accept-language':'en'});
+    const res=await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {headers:{Accept:'application/json'}});
+    if(res.ok){
+      const label=formatNominatimReverseGeocode(await res.json(), lat, lon);
+      if(label){ cache[cacheKey]={label, provider:'nominatim', savedAt:new Date().toISOString()}; writeReverseGeocodeCache(cache); return label; }
+      console.warn('[ReverseGeocode] Nominatim returned no usable label.');
+    } else {
+      console.warn(`[ReverseGeocode] Nominatim failed: ${res.status} ${res.statusText}`);
+    }
+  }catch(e){
+    console.warn('[ReverseGeocode] Nominatim request failed:', e);
+  }
+  return null;
 }
 
 // ---------- Quick Select + GPS ----------
-function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); const entries = Object.entries(QUICK_SELECT_CITIES).sort((a,b)=> a[1].lon - b[1].lon); for (const [name] of entries){ const opt=document.createElement('option'); opt.value=name; opt.textContent=name; select.appendChild(opt); } }
+function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); for (const loc of readSavedLocations()){ const opt=document.createElement('option'); opt.value=loc.id; opt.textContent=loc.name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', ()=>{ if(!navigator.geolocation){ alert('Geolocation not supported by this browser.'); return;} navigator.geolocation.getCurrentPosition(async(pos)=>{ const {latitude:lat, longitude:lon}=pos.coords||{}; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; const resolved=await reverseGeocode(lat, lon); const name=resolved||`My Location (${lat.toFixed(3)}, ${lon.toFixed(3)})`; await loadCityByName(name, {lat, lon}); }, (err)=>{ alert('Unable to get location: '+(err?.message||'Unknown error')); }, {enableHighAccuracy:true, timeout:8000, maximumAge:300000}); }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadGpsLocation(false); }catch(err){ alert('Unable to get location: '+(err?.message||'Unknown error')); } }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -1139,6 +1601,32 @@ function reloadForUpdate(){
   window.location.reload(true); // Hard reload to bypass cache
 }
 
+async function loadInitialLocation(){
+  readSavedLocations();
+  const def=readDefaultLocation();
+  if(def?.mode==='gps'){
+    try{ await loadGpsLocation(true); updateRangeButtonLabel(); return; }
+    catch(e){ console.warn('[Locations] GPS default failed, falling back:', e); }
+  }
+  if(def?.mode==='saved'){
+    const saved=def.locationId ? findSavedLocationById(def.locationId) : null;
+    const snapshot=normalizeLocation(def);
+    const loc=saved || snapshot;
+    if(loc){ await loadCityByName(loc.name, loc); updateRangeButtonLabel(); return; }
+  }
+  try{
+    await loadGpsLocation(true);
+    updateRangeButtonLabel();
+    return;
+  }catch(e){
+    console.warn('[Locations] Startup GPS failed, falling back to saved quick list:', e);
+  }
+  const first=readSavedLocations()[0];
+  if(first){ await loadCityByName(first.name, first); updateRangeButtonLabel(); return; }
+  const moon=normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']});
+  if(moon){ await loadCityByName(moon.name, moon); updateRangeButtonLabel(); }
+}
+
 // ---------- Boot ----------
 window.addEventListener('DOMContentLoaded', async ()=>{
   // Apply initial theme classes based on localStorage value
@@ -1158,7 +1646,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.45`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.46`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1168,7 +1656,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
 
   $("quickSelect")?.addEventListener("change", handleQuickSelectChange);
-  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
+  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const coords=parseCoordinateSearch(q); if(coords){ await loadCoordinatesLocation(coords.lat, coords.lon, false); const qs=$("quickSelect"); if(qs) qs.value=''; return; } const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
   $("themeToggle")?.addEventListener("click", toggleTheme);
   $("testModeToggle")?.addEventListener("click", toggleTestMode);
   setupRangeButtonLongPress();
@@ -1177,21 +1665,91 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
 
-  const coords = QUICK_SELECT_CITIES['Moon Township, PA'];
-  const qs=$("quickSelect"); if(qs) qs.value='Moon Township, PA';
-  currentLocationLat = coords.lat;
-  currentLocationLon = coords.lon;
-  setCityTitle('Moon Township, PA');
   try{
-    const data = await loadWeatherData('Moon Township, PA', coords.lat, coords.lon);
-    buildChart(data);
-    updateRangeButtonLabel();
+    await loadInitialLocation();
   }catch(e){ console.error(e); alert(e?.message||'Failed to load initial data.'); }
 
   window.addEventListener('resize', ()=>{ if(LAYOUT_MODE==='fit' && currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart);}catch{} } });
 });
 
 // ======= About Dialog =======
+function formatRevisionMarkdownInline(text){
+  return escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(127,127,127,0.16);padding:1px 4px;border-radius:4px">$1</code>');
+}
+function renderRevisionMarkdown(markdown){
+  const lines=String(markdown||'').replace(/\r\n/g, '\n').split('\n');
+  const html=[];
+  let inList=false;
+  function closeList(){ if(inList){ html.push('</ul>'); inList=false; } }
+  lines.forEach(raw=>{
+    const line=raw.trimEnd();
+    if(!line.trim()){ closeList(); html.push('<div style="height:8px"></div>'); return; }
+    if(/^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)){
+      closeList();
+      html.push(`<hr style="border:0;border-top:1px solid ${isDark?'#374151':'#d1d5db'};margin:18px 0 14px 0">`);
+      return;
+    }
+    const heading=line.match(/^(#{1,4})\s+(.+)$/);
+    if(heading){
+      closeList();
+      const level=heading[1].length;
+      const size=level===1?'1.35rem':level===2?'1.1rem':level===3?'0.98rem':'0.9rem';
+      const margin=level===1?'0 0 12px 0':'14px 0 8px 0';
+      html.push(`<h${Math.min(level,4)} style="font-size:${size};margin:${margin};line-height:1.25">${formatRevisionMarkdownInline(heading[2])}</h${Math.min(level,4)}>`);
+      return;
+    }
+    const bullet=line.match(/^[-*]\s+(.+)$/);
+    if(bullet){
+      if(!inList){ html.push('<ul style="margin:6px 0 10px 18px;padding:0;list-style:disc">'); inList=true; }
+      html.push(`<li style="margin:4px 0">${formatRevisionMarkdownInline(bullet[1])}</li>`);
+      return;
+    }
+    const quote=line.match(/^>\s?(.+)$/);
+    if(quote){
+      closeList();
+      html.push(`<blockquote style="margin:8px 0;padding:8px 10px;border-left:3px solid #f59e0b;background:${isDark?'rgba(245,158,11,0.12)':'rgba(245,158,11,0.16)'}">${formatRevisionMarkdownInline(quote[1])}</blockquote>`);
+      return;
+    }
+    closeList();
+    html.push(`<p style="margin:6px 0;line-height:1.45">${formatRevisionMarkdownInline(line)}</p>`);
+  });
+  closeList();
+  return html.join('');
+}
+async function showRevisionLogDialog(){
+  let backdrop=document.getElementById('revisionLogBackdrop');
+  if(!backdrop){
+    backdrop=document.createElement('div');
+    backdrop.id='revisionLogBackdrop';
+    Object.assign(backdrop.style,{position:'fixed',inset:'0',background:'rgba(0,0,0,0.55)',zIndex:'5100',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'});
+    const dialog=document.createElement('div');
+    Object.assign(dialog.style,{background:isDark?'#111827':'#ffffff',color:isDark?'#e5e7eb':'#111827',borderRadius:'12px',width:'min(860px,100%)',maxHeight:'86vh',display:'flex',flexDirection:'column',boxShadow:'0 10px 40px rgba(0,0,0,0.35)',border:`1px solid ${isDark?'#374151':'#d1d5db'}`});
+    dialog.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid ${isDark?'#374151':'#e5e7eb'}">
+        <h2 style="margin:0;font-size:1.1rem">Revision Log</h2>
+        <button id="revisionLogClose" style="height:30px;width:34px;border-radius:6px;border:1px solid ${isDark?'#374151':'#d1d5db'};background:transparent;color:inherit;cursor:pointer">x</button>
+      </div>
+      <div id="revisionLogContent" style="padding:14px 18px;overflow:auto;font-size:0.92rem;line-height:1.4"></div>`;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    document.getElementById('revisionLogClose').addEventListener('click', ()=>backdrop.remove());
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) backdrop.remove(); });
+  }
+  const content=document.getElementById('revisionLogContent');
+  if(content) content.innerHTML='<p style="margin:0;opacity:0.75">Loading revision log...</p>';
+  backdrop.style.display='flex';
+  try{
+    const res=await fetch('./REVISION_LOG.md?cache_bust=' + Date.now());
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const markdown=await res.text();
+    if(content) content.innerHTML=renderRevisionMarkdown(markdown);
+  }catch(e){
+    if(content) content.innerHTML=`<p style="margin:0;color:${isDark?'#fecaca':'#7f1d1d'}">Unable to load the revision log right now.</p><p style="margin:8px 0 0 0;opacity:0.75">${formatRevisionMarkdownInline(e?.message||'Unknown error')}</p>`;
+  }
+}
 function showAboutDialog(){
   let backdrop = document.getElementById('aboutBackdrop');
   if(!backdrop){
@@ -1210,16 +1768,39 @@ function showAboutDialog(){
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
         <ul style="margin:0 0 16px 0; padding-left:20px; list-style:disc;">
           <li style="margin:6px 0;"><a href="https://www.bigdatacloud.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">BigDataCloud Reverse Geocoding</a></li>
+          <li style="margin:6px 0;"><a href="https://nominatim.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Nominatim Reverse Geocoding</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Geolocation</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Forecast</a></li>
           <li style="margin:6px 0;"><a href="https://www.chartjs.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Chart.js v4.4.1</a></li>
           <li style="margin:6px 0;"><a href="https://radar.weather.gov/" target="_blank" style="color:#3b82f6; text-decoration:none;">NOAA Weather Radar</a></li>
         </ul>
       </div>
+      <button id="aboutRevisionLog" style="width:100%; padding:10px; margin-top:12px; border:1px solid #2563eb; background:#2563eb; color:#ffffff; border-radius:6px; cursor:pointer; font-size:0.95rem;">Show Revision Log</button>
+      <button id="aboutClearCache" style="width:100%; padding:10px; margin-top:12px; border:1px solid #7f1d1d; background:#7f1d1d; color:#ffffff; border-radius:6px; cursor:pointer; font-size:0.95rem;">Clear Cache</button>
       <button id="aboutClose" style="width:100%; padding:10px; margin-top:12px; border:1px solid ${isDark ? '#374151' : '#d1d5db'}; background:${isDark ? '#111827' : '#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Close</button>
     `;
     backdrop.appendChild(dialog);
     document.body.appendChild(backdrop);
+    document.getElementById('aboutRevisionLog').addEventListener('click', ()=>{ showRevisionLogDialog(); });
+    document.getElementById('aboutClearCache').addEventListener('click', ()=>{
+      const message=[
+        'Clear all saved PEVcast settings from local storage?',
+        '',
+        'This will clear:',
+        '- Saved Quick List locations',
+        '- Default location and GPS-default preference',
+        '- Dark/light theme preference',
+        '- Feels Like Line and Wind Speed Line preferences',
+        '- Cached GPS place names',
+        '- Any other PEVcast settings saved in this browser',
+        '',
+        'You will need to reconfigure these after the app reloads.'
+      ].join('\n');
+      if(!confirm(message)) return;
+      localStorage.clear();
+      alert('Saved settings cleared. The app will reload.');
+      window.location.reload();
+    });
     document.getElementById('aboutClose').addEventListener('click', ()=>{ backdrop.remove(); });
     backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) backdrop.remove(); });
   } else {
@@ -1371,6 +1952,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
