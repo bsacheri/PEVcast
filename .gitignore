@@ -1,2 +1,5 @@
 # Exclude files containing "testdata" in the name
 *testdata*
+
+# Node/Playwright dependencies
+node_modules/

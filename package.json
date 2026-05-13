@@ -1,0 +1,25 @@
+{
+  "name": "pevcast",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A weather forecasting dashboard that visualizes hourly and daily weather data with interactive chart analysis.",
+  "scripts": {
+    "playwright": "playwright",
+    "test:e2e": "playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bsacheri/PEVcast.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GPL-3.0-only",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bsacheri/PEVcast/issues"
+  },
+  "homepage": "https://github.com/bsacheri/PEVcast#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

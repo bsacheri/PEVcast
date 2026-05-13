@@ -2,6 +2,40 @@
 
 ---
 
+## 7.12.49 - 2026-05-13
+
+> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+
+### Chart
+- Updated chart rendering, annotations, labels, or weather overlays.
+
+### Menu and Dialogs
+- Updated menu options, About dialog controls, or app dialogs.
+
+### Weather Data Popup
+- Updated the Hourly Weather Data popup display, selection, or copy behavior.
+
+### Locations
+- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
+
+### Maintenance
+- Updated application behavior in app.js.
+- Updated the page shell or version metadata in index.html.
+- Updated shared styling in styles.css.
+
+---
+
+## 7.12.49 - 2026-05-12
+
+### Chart
+- Changed the Visible Hours slider to use evenly spaced snapped stops while preserving the actual hour labels and zoom values.
+- Hid `Day Accum (Snow)` in the point status line when the visible temperature range is above the snow-display threshold.
+- Combined the top metrics and bottom point/debug summaries into one summary box above the chart.
+- Added a GPS resolving overlay, longer startup GPS timeout, retry prompt on GPS timeout, and deterministic Moon Township fallback instead of loading the first Quick Select item.
+- Reworked the mobile header controls into a cleaner app-style layout with full-width Quick Select and a compact search/action row.
+
+---
+
 ## 7.12.48 - 2026-05-09
 
 ### Locations
@@ -184,6 +218,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 

@@ -1,4 +1,4 @@
-// app.js @version 7.12.48
+// app.js @version 7.12.49
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.48'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/09/2026 1:50 AM';
+(function(){ try{ window.APP_VERSION='7.12.49'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/13/2026 12:53 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -84,6 +84,10 @@ const LOCATIONS_STORAGE_KEY = 'PEVcast-locations-v1';
 const DEFAULT_LOCATION_STORAGE_KEY = 'PEVcast-default-location-v1';
 
 function $(id){ return document.getElementById(id); }
+function showLocationLoading(message='Resolving GPS location...'){ const overlay=$("locationLoadingOverlay"); const msg=$("locationLoadingMessage"); if(msg) msg.textContent=message; if(overlay){ overlay.classList.remove('hidden'); overlay.setAttribute('aria-hidden','false'); } }
+function hideLocationLoading(){ const overlay=$("locationLoadingOverlay"); if(overlay){ overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden','true'); } }
+function clearQuickSelectSelection(){ const qs=$("quickSelect"); if(qs) qs.value=''; }
+function isGpsTimeoutError(error){ return error?.code===3 || error?.name==='TimeoutError' || /timeout|timed out/i.test(String(error?.message||'')); }
 function setCityTitle(name){ const el=$("cityTitle"); if(!el) return; el.textContent = name; const lat=currentLocationLat, lon=currentLocationLon; if(lat!=null && lon!=null){ el.title=`${lat.toFixed(4)}, ${lon.toFixed(4)}`; el.style.cursor='help'; } else { el.title=''; el.style.cursor=''; } }
 
 function initCityTitleTooltip(){
@@ -203,14 +207,16 @@ function saveCurrentLocationToQuickList(){
 function requestDeviceLocation(){
   return new Promise((resolve, reject)=>{
     if(!navigator.geolocation){ reject(new Error('Geolocation not supported by this browser.')); return; }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {enableHighAccuracy:true, timeout:8000, maximumAge:300000});
+    navigator.geolocation.getCurrentPosition(resolve, reject, {enableHighAccuracy:true, timeout:30000, maximumAge:300000});
   });
 }
 async function loadGpsLocation(saveAsDefault=false){
   const pos=await requestDeviceLocation();
   const {latitude:lat, longitude:lon}=pos.coords||{};
   if(!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS did not return valid coordinates.');
-  return loadCoordinatesLocation(lat, lon, saveAsDefault);
+  const location=await loadCoordinatesLocation(lat, lon, saveAsDefault);
+  clearQuickSelectSelection();
+  return location;
 }
 async function loadCoordinatesLocation(lat, lon, saveAsDefault=false){
   lat=Number(lat); lon=Number(lon);
@@ -455,9 +461,12 @@ function getVisibleHoursStops(totalHours){ const maxHours = Math.max(1, Math.rou
 function getVisibleHoursBounds(totalHours){ const maxHours = Math.max(1, Math.round(totalHours || 0)); const stops = getVisibleHoursStops(maxHours); const minHours = Math.min(stops[0] || MIN_VISIBLE_HOURS, maxHours); return { minHours, maxHours }; }
 function clampVisibleHours(targetHours, totalHours){ const { minHours, maxHours } = getVisibleHoursBounds(totalHours); const parsed = Number.isFinite(targetHours) ? targetHours : maxHours; return Math.max(minHours, Math.min(maxHours, Math.round(parsed))); }
 function snapVisibleHours(targetHours, totalHours){ const clamped = clampVisibleHours(targetHours, totalHours); const stops = getVisibleHoursStops(totalHours); let best = stops[0], bestDist = Infinity; for(const stop of stops){ const d = Math.abs(clamped - stop); if(d < bestDist){ best = stop; bestDist = d; } } return best; }
+function getVisibleHoursStopIndex(hours, totalHours){ const target = snapVisibleHours(hours, totalHours); const stops = getVisibleHoursStops(totalHours); return Math.max(0, stops.findIndex(stop=>stop===target)); }
+function getVisibleHoursFromStopIndex(index, totalHours){ const stops = getVisibleHoursStops(totalHours); const i = Math.max(0, Math.min(stops.length-1, Math.round(Number.isFinite(index) ? index : stops.length-1))); return stops[i] ?? Math.max(1, Math.round(totalHours || 0)); }
+function setVisibleHoursSliderValue(slider, hours, totalHours){ if(slider) slider.value=String(getVisibleHoursStopIndex(hours, totalHours)); }
 function formatVisibleHoursLabel(hours, maxHours){ if(hours>=maxHours) return 'All'; if(hours>60) return `${Math.floor(hours/24)}d`; return `${hours}h`; }
 function updateVisibleHoursDisplay(valueSpan, hours, maxHours){ if(valueSpan) valueSpan.textContent = formatVisibleHoursLabel(hours, maxHours); }
-function renderVisibleHoursTicks(totalHours){ const ticks=$("mainScrollScaleTicks"); const slider=$("mainScrollScale"); if(!ticks||!slider) return; const minHours=parseFloat(slider.min); const maxHours=parseFloat(slider.max); const span=Math.max(1, maxHours-minHours); ticks.textContent=''; getVisibleHoursStops(totalHours).forEach(stop=>{ if(stop<minHours||stop>maxHours) return; const tick=document.createElement('span'); tick.textContent=formatVisibleHoursLabel(stop, maxHours); tick.style.left=`${((stop-minHours)/span)*100}%`; ticks.appendChild(tick); }); }
+function renderVisibleHoursTicks(totalHours){ const ticks=$("mainScrollScaleTicks"); if(!ticks) return; const maxHours=Math.max(1, Math.round(totalHours || 0)); const stops=getVisibleHoursStops(totalHours); const denom=Math.max(1, stops.length-1); ticks.textContent=''; stops.forEach((stop, index)=>{ const tick=document.createElement('span'); tick.textContent=formatVisibleHoursLabel(stop, maxHours); tick.style.left=`${(index/denom)*100}%`; ticks.appendChild(tick); }); }
 function getVisibleHoursForScale(scale, scrollerWidth, pxPerHour){ if(!scale || !scrollerWidth || !pxPerHour) return 0; return scrollerWidth / (pxPerHour * scale); }
 function getScaleForVisibleHours(visibleHours, scrollerWidth, pxPerHour){ if(!visibleHours || !scrollerWidth || !pxPerHour) return 1; return scrollerWidth / (pxPerHour * visibleHours); }
 function getXAxisMaxTicks(labelCount){ const canvas=$("weatherChart"); const scroller=$("chartScroll"); const container=document.querySelector('.chart-container'); const viewportWidth=scroller?.clientWidth || container?.clientWidth || window.innerWidth; const scrollWidth=parseFloat(canvas?.style?.width) || Number(canvas?.getAttribute?.('width')) || canvas?.getBoundingClientRect?.().width || viewportWidth; const width=(LAYOUT_MODE==='scroll') ? scrollWidth : viewportWidth; return Math.max(6, Math.min(labelCount, Math.floor(width/48))); }
@@ -482,10 +491,10 @@ function scheduleMobileTooltipHide(chartInstance){
   }, MOBILE_TOOLTIP_HIDE_DELAY_MS);
 }
 
-function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { minHours, maxHours } = getVisibleHoursBounds(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min=String(minHours); slider.max=String(maxHours); slider.step='any'; renderVisibleHoursTicks(hours); }
+function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { maxHours } = getVisibleHoursBounds(hours); const visibleHourStops = getVisibleHoursStops(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min='0'; slider.max=String(Math.max(0, visibleHourStops.length-1)); slider.step='1'; slider.dataset.visibleHoursTotal=String(hours); renderVisibleHoursTicks(hours); }
   if(LAYOUT_MODE==='fit'){
     LAYOUT_SCROLL_SCALE=fitScale;
-    if(slider) slider.value=String(fitVisibleHours);
+    setVisibleHoursSliderValue(slider, fitVisibleHours, hours);
     updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
     scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
   } else {
@@ -493,7 +502,7 @@ function applyLayout(labels){ const container=document.querySelector('.chart-con
     const atFit = currentVisibleHours >= maxHours;
     if(atFit){
       LAYOUT_SCROLL_SCALE=fitScale;
-      if(slider) slider.value=String(fitVisibleHours);
+      setVisibleHoursSliderValue(slider, fitVisibleHours, hours);
       updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
       scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
     } else {
@@ -502,7 +511,7 @@ function applyLayout(labels){ const container=document.querySelector('.chart-con
       LAYOUT_SCROLL_SCALE=targetScale;
       const w=Math.max(scroller.clientWidth, hours*pxPerHour*LAYOUT_SCROLL_SCALE);
       scroller.style.overflowX=(w<=scroller.clientWidth+1)?'hidden':'auto'; canvas.style.width=w+'px'; canvas.setAttribute('width', w);
-      if(slider) slider.value=String(clampedVisibleHours);
+      setVisibleHoursSliderValue(slider, clampedVisibleHours, hours);
       updateVisibleHoursDisplay(valueSpan, clampedVisibleHours, maxHours);
     }
   } }
@@ -700,7 +709,8 @@ function buildChart(dataset){
           ).toFixed(1);
           const windSpd = h.windMph ? h.windMph.toFixed(1) : "N/A";
           const windDir = h.windDir ?? "N/A";
-          svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}\u00B0, Precip: ${h.precipIn.toFixed(1)} mm, Snow: ${h.snowIn.toFixed(1)} mm, Rain: ${h.rainIn.toFixed(1)} mm, Est Snow: ${estHour} mm, Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}\u00B0, Day Accum (Liquid): ${day.liquid.toFixed(1)} mm, Day Accum (Snow): ${day.estSnow.toFixed(1)} mm`;
+          const snowAccumText = hidesnow ? "" : `, Day Accum (Snow): ${day.estSnow.toFixed(1)} mm`;
+          svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}\u00B0, Precip: ${h.precipIn.toFixed(1)} mm, Snow: ${h.snowIn.toFixed(1)} mm, Rain: ${h.rainIn.toFixed(1)} mm, Est Snow: ${estHour} mm, Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}\u00B0, Day Accum (Liquid): ${day.liquid.toFixed(1)} mm${snowAccumText}`;
         }
         lastClickedIndex = i;
         lastClickedTime = labels[i];
@@ -858,7 +868,7 @@ function updateChromeForTheme(){
     if (isDark){ el.style.background='rgba(31,41,55,0.85)'; el.style.color='#e5e7eb'; el.style.border='1px solid rgba(255,255,255,0.12)'; }
     else { el.style.background='rgba(255,255,255,0.95)'; el.style.color='#111827'; el.style.border='1px solid rgba(17,24,39,0.20)'; }
   });
-  const status=$("statusLine"); if(status){ if(isDark){ status.style.background='rgba(31,41,55,0.90)'; status.style.color='#f3f4f6'; status.style.border='1px solid rgba(255,255,255,0.15)'; } else { status.style.background='rgba(255,255,255,0.98)'; status.style.color='#111827'; status.style.border='1px solid rgba(17,24,39,0.20)'; } }
+  const status=$("statusLine"); if(status){ status.style.background='transparent'; status.style.color='inherit'; status.style.border='none'; }
   // Menu button + panel + selects
   const btn=$("appMenuBtn"), panel=$("appMenuPanel");
   if(btn){ if(isDark){ Object.assign(btn.style,{background:'rgba(31,41,55,0.80)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)'}); } else { Object.assign(btn.style,{background:'rgba(243,244,246,0.95)',color:'#111827',border:'1px solid rgba(17,24,39,0.20)'}); } }
@@ -931,7 +941,10 @@ function ensureAppMenu(){
 function reserveRightHeaderSpace(){
   // Prevent overlap behind Menu/Maximize: add right padding to header and center other controls
   const header=document.querySelector('.app-header');
-  if(header){ header.style.paddingRight = '220px'; header.style.position='relative'; header.style.zIndex='100'; }
+  const mobile=window.matchMedia?.('(max-width: 640px)')?.matches;
+  if(header){ header.style.paddingRight = mobile ? '0.65rem' : '220px'; header.style.position='relative'; header.style.zIndex='100'; }
+  const titleGroup=document.querySelector('.title-group');
+  if(titleGroup) titleGroup.style.paddingRight = mobile ? '218px' : '';
   const ctrl = document.querySelector('.header-controls, #headerControls');
   if(ctrl){ ctrl.style.display='flex'; ctrl.style.justifyContent='center'; ctrl.style.alignItems='center'; }
 }
@@ -1413,7 +1426,7 @@ function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.t
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; localStorage.setItem(FEELS_LIKE_LINE_STORAGE_KEY, JSON.stringify(APPARENT_OVERLAY_ENABLED)); if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
 function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
-function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const maxVisibleHours=parseFloat(slider.max); const desiredVisibleHours=snapVisibleHours(parseFloat(slider.value), maxVisibleHours); slider.value=String(desiredVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
+function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const totalVisibleHours=parseInt(slider.dataset.visibleHoursTotal || '', 10) || chart?.data?.labels?.length || parseInt(slider.max, 10) || 24; const maxVisibleHours=getVisibleHoursBounds(totalVisibleHours).maxHours; const desiredVisibleHours=getVisibleHoursFromStopIndex(parseFloat(slider.value), totalVisibleHours); setVisibleHoursSliderValue(slider, desiredVisibleHours, totalVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
     const scroller=$('chartScroll'); const pxPerHour=56;
     if(scroller){ LAYOUT_SCROLL_SCALE=getScaleForVisibleHours(desiredVisibleHours, scroller.clientWidth, pxPerHour); }
     if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
@@ -1561,7 +1574,7 @@ async function reverseGeocode(lat, lon){
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); for (const loc of readSavedLocations()){ const opt=document.createElement('option'); opt.value=loc.id; opt.textContent=loc.name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadGpsLocation(false); }catch(err){ alert('Unable to get location: '+(err?.message||'Unknown error')); } }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ alert('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -1626,30 +1639,43 @@ function reloadForUpdate(){
   window.location.reload(true); // Hard reload to bypass cache
 }
 
+function getMoonTownshipFallback(){
+  return normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']});
+}
+async function loadMoonTownshipFallback(){
+  const moon=getMoonTownshipFallback();
+  if(moon){ await loadCityByName(moon.name, moon); updateRangeButtonLabel(); }
+}
+async function loadStartupGpsWithRetry(saveAsDefault=true){
+  while(true){
+    try{
+      showLocationLoading('Resolving GPS location...');
+      await loadGpsLocation(saveAsDefault);
+      updateRangeButtonLabel();
+      return true;
+    }catch(e){
+      console.warn('[Locations] Startup GPS failed:', e);
+      const timedOut=isGpsTimeoutError(e);
+      hideLocationLoading();
+      if(timedOut && confirm('GPS location timed out. Do you want to try again?')) continue;
+      if(!timedOut) alert('Unable to get GPS location: '+(e?.message||'Unknown error'));
+      return false;
+    }finally{
+      hideLocationLoading();
+    }
+  }
+}
 async function loadInitialLocation(){
   readSavedLocations();
   const def=readDefaultLocation();
-  if(def?.mode==='gps'){
-    try{ await loadGpsLocation(true); updateRangeButtonLabel(); return; }
-    catch(e){ console.warn('[Locations] GPS default failed, falling back:', e); }
-  }
   if(def?.mode==='saved'){
     const saved=def.locationId ? findSavedLocationById(def.locationId) : null;
     const snapshot=normalizeLocation(def);
     const loc=saved || snapshot;
     if(loc){ await loadCityByName(loc.name, loc); updateRangeButtonLabel(); return; }
   }
-  try{
-    await loadGpsLocation(true);
-    updateRangeButtonLabel();
-    return;
-  }catch(e){
-    console.warn('[Locations] Startup GPS failed, falling back to saved quick list:', e);
-  }
-  const first=readSavedLocations()[0];
-  if(first){ await loadCityByName(first.name, first); updateRangeButtonLabel(); return; }
-  const moon=normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']});
-  if(moon){ await loadCityByName(moon.name, moon); updateRangeButtonLabel(); }
+  if(await loadStartupGpsWithRetry(true)) return;
+  await loadMoonTownshipFallback();
 }
 
 // ---------- Boot ----------
@@ -1671,7 +1697,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.48`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.49`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -1980,6 +2006,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
