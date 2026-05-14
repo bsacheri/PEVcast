@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.26', css: '7.12.22', js: '7.12.49' };
+    window.FILE_VERSIONS = { html: '7.12.27', css: '7.12.23', js: '7.12.50' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -81,6 +81,23 @@
   </div>
 
   <main class="app-main">
+    <div id="scrollScaleControlContainer" style="padding:0.5rem 0.75rem; background:rgba(31,41,55,0.6); border-radius:0.5rem; margin-bottom:0.75rem; border:1px solid rgba(55,65,81,0.5)">
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <label style="flex:1;font-size:0.9rem">Visible Hours</label>
+        <div class="visible-hours-slider">
+          <input type="range" id="mainScrollScale" min="12" max="24" step="1" value="24">
+          <div id="mainScrollScaleTicks" class="visible-hours-ticks" aria-hidden="true"></div>
+        </div>
+        <span id="mainScrollScaleValue" style="width:52px;text-align:right;font-weight:600;font-size:0.95rem">24h</span>
+      </div>
+    </div>
+
+    <section class="chart-container">
+      <div id="chartScroll" class="chart-scroll">
+        <canvas id="weatherChart"></canvas>
+      </div>
+    </section>
+
     <section class="summary-box forecast-summary">
       <div class="summary-top">
         <div class="summary-left">
@@ -117,23 +134,6 @@
       </div>
     </section>
 
-    <div id="scrollScaleControlContainer" style="padding:0.5rem 0.75rem; background:rgba(31,41,55,0.6); border-radius:0.5rem; margin-bottom:0.75rem; border:1px solid rgba(55,65,81,0.5)">
-      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
-        <label style="flex:1;font-size:0.9rem">Visible Hours</label>
-        <div class="visible-hours-slider">
-          <input type="range" id="mainScrollScale" min="12" max="24" step="1" value="24">
-          <div id="mainScrollScaleTicks" class="visible-hours-ticks" aria-hidden="true"></div>
-        </div>
-        <span id="mainScrollScaleValue" style="width:52px;text-align:right;font-weight:600;font-size:0.95rem">24h</span>
-      </div>
-    </div>
-
-    <section class="chart-container">
-      <div id="chartScroll" class="chart-scroll">
-        <canvas id="weatherChart"></canvas>
-      </div>
-    </section>
-
     <section class="compare-action">
       <button id="chartCompareBtn" type="button">Chart Compare</button>
     </section>
@@ -151,16 +151,17 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.26</span>
+      <span id="ver-html">index.html v7.12.27</span>
       <span>|</span>
-      <span id="ver-css">styles.css v7.12.22</span>
+      <span id="ver-css">styles.css v7.12.23</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.49</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/13/2026 12:53 AM</span>
+      <span id="ver-js">app.js v7.12.50</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/14/2026 9:59 AM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

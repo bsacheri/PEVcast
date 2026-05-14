@@ -1,4 +1,4 @@
-// app.js @version 7.12.49
+// app.js @version 7.12.50
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.49'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/13/2026 12:53 AM';
+(function(){ try{ window.APP_VERSION='7.12.50'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/14/2026 9:59 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -53,6 +53,9 @@ const REVERSE_GEOCODE_CACHE_STORAGE_KEY = 'PEVcast-reverse-geocode-cache-v1';
 let GRADIENT_MODE = 'custom-scale';
 let GRADIENT_WIDTH = 96; // px, user selectable
 let GRADIENT_EXTRA_LEFT = 40; // px extra left padding
+
+function isMobileScreen(){ return window.matchMedia?.('(max-width: 640px)')?.matches || false; }
+function getGradientWidth(){ return GRADIENT_WIDTH * (isMobileScreen() ? 0.5 : 1); }
 
 const TEST_DATA_URL = './test_data.json';
 
@@ -416,15 +419,15 @@ const TempColorBarPlugin = {
   anchors:[{t:-4,c:'#000000'},{t:5,c:'#3a3a3a'},{t:14,c:'#2b2f83'},{t:23,c:'#0033cc'},{t:32,c:'#005eff'},{t:41,c:'#3f7fff'},{t:50,c:'#8cc6ff'},{t:59,c:'#4fd9e6'},{t:68,c:'#2e8b57'},{t:77,c:'#9acd32'},{t:86,c:'#ffd400'},{t:95,c:'#ff7f00'},{t:104,c:'#ff2b2b'}],
   lerp(aHex,bHex,t){ const a=parseInt(aHex.slice(1),16), b=parseInt(bHex.slice(1),16); const ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255; const br=(b>>16)&255, bg=(b>>8)&255, bb=b&255; const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bl=Math.round(ab+(bb-ab)*t); const h=v=>v.toString(16).padStart(2,'0'); return `#${h(r)}${h(g)}${h(bl)}`; },
   colorAtTemp(t){ const A=this.anchors; if(t<=A[0].t) return A[0].c; if(t>=A[A.length-1].t) return A[A.length-1].c; for(let i=0;i<A.length-1;i++){ const a=A[i], b=A[i+1]; if(t>=a.t && t<=b.t){ const p=(t-a.t)/((b.t-a.t)||1); return this.lerp(a.c,b.c,p);} } return A[0].c; },
-  afterFit(chart, scale){ if(GRADIENT_MODE!=='plugin') return; if(scale.id==='yTemp'){ scale.width += (GRADIENT_WIDTH + 8 + GRADIENT_EXTRA_LEFT); } },
+  afterFit(chart, scale){ if(GRADIENT_MODE!=='plugin') return; if(scale.id==='yTemp'){ scale.width += (getGradientWidth() + 8 + GRADIENT_EXTRA_LEFT); } },
   beforeDraw(chart,args){ const y=chart.scales.yTemp, area=chart.chartArea; if(!y||!area) return; const ctx=chart.ctx; const top=area.top, bottom=area.bottom; const lo=y.min, hi=y.max; const range=(hi-lo)||1; const anchors=[{t:lo,c:this.colorAtTemp(lo)},...this.anchors.filter(a=>a.t>lo&&a.t<hi),{t:hi,c:this.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,top,0,bottom); anchors.forEach(a=>{ const p=1-((a.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), a.c); });
-    if(GRADIENT_MODE==='plugin'){ const gap=8; const xRight=y.left-gap; const xLeft=xRight-GRADIENT_WIDTH; ctx.save(); ctx.fillStyle=grad; ctx.fillRect(xLeft, top, GRADIENT_WIDTH, bottom-top); ctx.restore(); }
-    else if(GRADIENT_MODE==='axis-overlay'){ const w=(y.width||GRADIENT_WIDTH); const xLeft=y.left-w; ctx.save(); ctx.globalAlpha = 0.95; ctx.fillStyle=grad; ctx.fillRect(xLeft, top, w, bottom-top); ctx.restore(); }
+    if(GRADIENT_MODE==='plugin'){ const w=getGradientWidth(); const gap=8; const xRight=y.left-gap; const xLeft=xRight-w; ctx.save(); ctx.fillStyle=grad; ctx.fillRect(xLeft, top, w, bottom-top); ctx.restore(); }
+    else if(GRADIENT_MODE==='axis-overlay'){ const w=(y.width||GRADIENT_WIDTH) * (isMobileScreen() ? 0.5 : 1); const xLeft=y.left-w; ctx.save(); ctx.globalAlpha = 0.95; ctx.fillStyle=grad; ctx.fillRect(xLeft, top, w, bottom-top); ctx.restore(); }
     else if(GRADIENT_MODE==='custom-scale'){ /* handled in afterDraw */ }
     else if(GRADIENT_MODE==='separate-canvas'){ /* drawn by SeparateColorBar */ }
     else { /* 'dom' or 'off' */ }
   },
-  afterDraw(chart,args){ if(GRADIENT_MODE!=='custom-scale') return; const y=chart.scales.yTemp, area=chart.chartArea; if(!y||!area) return; const ctx=chart.ctx; const top=area.top, bottom=area.bottom; const lo=y.min, hi=y.max; const range=(hi-lo)||1; const anchors=[{t:lo,c:this.colorAtTemp(lo)},...this.anchors.filter(a=>a.t>lo&&a.t<hi),{t:hi,c:this.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,top,0,bottom); anchors.forEach(a=>{ const p=1-((a.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), a.c); }); const w=(chart.scales.yTemp.width||GRADIENT_WIDTH); const xLeft=chart.scales.yTemp.left-w;
+  afterDraw(chart,args){ if(GRADIENT_MODE!=='custom-scale') return; const y=chart.scales.yTemp, area=chart.chartArea; if(!y||!area) return; const ctx=chart.ctx; const top=area.top, bottom=area.bottom; const lo=y.min, hi=y.max; const range=(hi-lo)||1; const anchors=[{t:lo,c:this.colorAtTemp(lo)},...this.anchors.filter(a=>a.t>lo&&a.t<hi),{t:hi,c:this.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,top,0,bottom); anchors.forEach(a=>{ const p=1-((a.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), a.c); }); const w=getGradientWidth(); const xLeft=chart.scales.yTemp.left-w;
     ctx.save(); ctx.fillStyle=grad; ctx.fillRect(xLeft, top, w, bottom-top);
     ctx.fillStyle = '#ffffff'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; ctx.textAlign='right'; ctx.textBaseline='middle';
     const ticks = chart.scales.yTemp.ticks || []; for(const t of ticks){ const py = chart.scales.yTemp.getPixelForValue(t.value); if(py>=top && py<=bottom){ ctx.fillText(`${t.value}°`, chart.scales.yTemp.left-6, py); } }
@@ -437,7 +440,7 @@ Chart.register(TempColorBarPlugin);
 const DomColorBar = {
   id: 'DomColorBar', el: null,
   ensure(){ if(this.el && document.body.contains(this.el)) return this.el; const host=document.querySelector('.chart-container'); if(!host) return null; let cv=document.getElementById('tempColorBarCanvas'); if(!cv){ cv=document.createElement('canvas'); cv.id='tempColorBarCanvas'; cv.style.position='absolute'; cv.style.pointerEvents='none'; cv.style.zIndex='2'; host.appendChild(cv); } this.el=cv; return cv; },
-  render(chart){ if(GRADIENT_MODE!=='dom') return this.hide(); const y=chart.scales.yTemp, area=chart.chartArea; const cv=this.ensure(); if(!cv||!y||!area) return; const top=area.top; const bottom=area.bottom; const h=bottom-top; const gap=8; const xRight=y.left-gap; const xLeft=xRight-GRADIENT_WIDTH; const dpr=window.devicePixelRatio||1; cv.style.left=`${xLeft}px`; cv.style.top=`${top}px`; cv.style.width=`${GRADIENT_WIDTH}px`; cv.style.height=`${h}px`; cv.width=Math.max(1,Math.floor(GRADIENT_WIDTH*dpr)); cv.height=Math.max(1,Math.floor(h*dpr)); const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); const lo=y.min, hi=y.max; const range=(hi-lo)||1; const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,0,0,h); stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); }); ctx.fillStyle=grad; ctx.fillRect(0,0,GRADIENT_WIDTH,h); cv.style.display='block'; },
+  render(chart){ if(GRADIENT_MODE!=='dom') return this.hide(); const y=chart.scales.yTemp, area=chart.chartArea; const cv=this.ensure(); if(!cv||!y||!area) return; const top=area.top; const bottom=area.bottom; const h=bottom-top; const w=getGradientWidth(); const gap=8; const xRight=y.left-gap; const xLeft=xRight-w; const dpr=window.devicePixelRatio||1; cv.style.left=`${xLeft}px`; cv.style.top=`${top}px`; cv.style.width=`${w}px`; cv.style.height=`${h}px`; cv.width=Math.max(1,Math.floor(w*dpr)); cv.height=Math.max(1,Math.floor(h*dpr)); const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); const lo=y.min, hi=y.max; const range=(hi-lo)||1; const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,0,0,h); stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); }); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); cv.style.display='block'; },
   hide(){ if(this.el){ this.el.style.display='none'; } }
 };
 
@@ -445,7 +448,7 @@ const DomColorBar = {
 const SeparateColorBar = {
   id:'SeparateColorBar', el:null,
   ensure(){ if(this.el && document.body.contains(this.el)) return this.el; let cv=document.getElementById('tempColorBarSeparate'); if(!cv){ cv=document.createElement('canvas'); cv.id='tempColorBarSeparate'; cv.style.position='fixed'; cv.style.pointerEvents='none'; cv.style.zIndex='2'; document.body.appendChild(cv); } this.el=cv; return cv; },
-  render(chart){ if(GRADIENT_MODE!=='separate-canvas') return this.hide(); const y=chart.scales.yTemp, area=chart.chartArea; const cv=this.ensure(); if(!cv||!y||!area) return; const rect=chart.canvas.getBoundingClientRect(); const top=area.top+rect.top; const bottom=area.bottom+rect.top; const h=bottom-top; const w=GRADIENT_WIDTH; const gap=8; const xRight=(rect.left + y.left) - gap; const xLeft=xRight - w; const dpr=window.devicePixelRatio||1; cv.style.left=`${Math.round(xLeft)}px`; cv.style.top=`${Math.round(top)}px`; cv.style.width=`${w}px`; cv.style.height=`${h}px`; cv.width=Math.max(1,Math.floor(w*dpr)); cv.height=Math.max(1,Math.floor(h*dpr)); const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); const lo=y.min, hi=y.max; const range=(hi-lo)||1; const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,0,0,h); stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); }); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); cv.style.display='block'; },
+  render(chart){ if(GRADIENT_MODE!=='separate-canvas') return this.hide(); const y=chart.scales.yTemp, area=chart.chartArea; const cv=this.ensure(); if(!cv||!y||!area) return; const rect=chart.canvas.getBoundingClientRect(); const top=area.top+rect.top; const bottom=area.bottom+rect.top; const h=bottom-top; const w=getGradientWidth(); const gap=8; const xRight=(rect.left + y.left) - gap; const xLeft=xRight - w; const dpr=window.devicePixelRatio||1; cv.style.left=`${Math.round(xLeft)}px`; cv.style.top=`${Math.round(top)}px`; cv.style.width=`${w}px`; cv.style.height=`${h}px`; cv.width=Math.max(1,Math.floor(w*dpr)); cv.height=Math.max(1,Math.floor(h*dpr)); const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); const lo=y.min, hi=y.max; const range=(hi-lo)||1; const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,0,0,h); stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); }); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); cv.style.display='block'; },
   hide(){ if(this.el){ this.el.style.display='none'; } }
 };
 
@@ -1697,7 +1700,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.49`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.50`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2006,6 +2009,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

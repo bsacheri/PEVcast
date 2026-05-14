@@ -1,9 +1,11 @@
 
-/* styles.css @version 7.12.22 */
+/* styles.css @version 7.12.23 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
 }
+*, *::before, *::after { box-sizing:border-box; }
+html, body { width:100%; max-width:100%; overflow-x:hidden; }
 body { margin:0; font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg-dark); color:var(--fg-dark); }
 body.light { background:var(--bg-light); color:var(--fg-light); }
 .app-header { display:flex; justify-content:space-between; align-items:center; padding:0.75rem 1rem; border-bottom:1px solid var(--border-subtle); }
@@ -16,7 +18,7 @@ body.light .coords-popup { background:rgba(243,244,246,0.97); color:#111827; bor
 .search-group { display:flex; gap:0.25rem; }
 .quick-select { width:10rem; }
 #cityInput { width:120px; box-sizing:border-box; flex-shrink:0; }
-.app-main { padding:0.75rem; }
+.app-main { width:100%; max-width:100%; padding:0.75rem; overflow-x:hidden; }
 .summary-box { display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.75rem; border-radius:0.5rem; background:rgba(31,41,55,0.8); margin-bottom:0.75rem; gap:1rem; }
 .forecast-summary { flex-direction:column; align-items:stretch; gap:0.45rem; }
 .summary-top { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
@@ -28,7 +30,7 @@ body.light .coords-popup { background:rgba(243,244,246,0.97); color:#111827; bor
 #rangeDebugLine .summary-value { font-weight:500; font-size:0.85rem; opacity:0.92; }
 .summary-right { margin-left:auto; text-align:right; min-width:240px; }
 .summary-suntimes { font-size:0.9rem; opacity:0.9; }
-.chart-container { position:relative; height:420px; }
+.chart-container { position:relative; height:420px; margin-bottom:0.75rem; max-width:100%; }
 .chart-scroll { width:100%; height:100%; overflow-x:auto; overflow-y:hidden; }
 canvas#weatherChart { display:block; }
 .visible-hours-slider { flex:1; min-width:160px; padding-bottom:0.95rem; position:relative; }
@@ -73,11 +75,12 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
   .title-group{min-width:0; padding-right:0.25rem;}
   .title-group h1{line-height:1.1;}
   .city-title{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .controls-group{width:100%; display:grid; grid-template-columns:minmax(0, 1fr) auto auto; align-items:center; gap:0.45rem; flex-wrap:initial;}
+  .controls-group{width:100%; max-width:100%; min-width:0; display:grid; grid-template-columns:minmax(0, 1fr) auto auto; align-items:center; gap:0.45rem; flex-wrap:initial;}
+  .controls-group > * { min-width:0; max-width:100%; }
   .quick-select, .search-group input, .search-group button, #themeToggle, #testModeToggle, #snowRatio, #layoutToggle { font-size:0.78rem; padding:0.35rem 0.5rem; min-height:34px; box-sizing:border-box; }
   .controls-group .quick-select{grid-column:1 / -1; width:100%;}
   #gpsBtn{grid-column:1; width:100%; height:34px; margin-left:0 !important; padding:0 0.65rem !important; justify-self:stretch;}
-  .search-group{grid-column:1 / -1; display:grid; grid-template-columns:minmax(0, 1fr) auto auto; width:100%; gap:0.35rem;}
+  .search-group{grid-column:1 / -1; display:grid; grid-template-columns:minmax(0, 1fr) auto auto; width:100%; max-width:100%; min-width:0; gap:0.35rem;}
   #cityInput{width:100%; min-width:0; height:34px;}
   #searchBtn{height:34px; white-space:nowrap;}
   #radarBtn{width:34px !important; height:34px !important; min-width:34px; margin-left:0 !important; padding:0 !important;}
@@ -89,7 +92,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
   .summary-left { gap:0.2rem;}
   .visible-hours-slider { min-width:120px; }
   .visible-hours-ticks { font-size:0.62rem; }
-  #btnContainer { right:10px !important; top:10px !important; flex-wrap:wrap; }
+  #btnContainer { right:10px !important; top:10px !important; max-width:calc(100vw - 20px); flex-wrap:wrap; }
   #appMenuPanel { 
     position:fixed !important; 
     right:0 !important; 
@@ -125,6 +128,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
 
 .compare-action { display:flex; justify-content:center; padding:0 0 0.75rem; }
 #chartCompareBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
+
 
 
 
