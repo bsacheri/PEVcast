@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.27', css: '7.12.23', js: '7.12.50' };
+    window.FILE_VERSIONS = { html: '7.12.28', css: '7.12.24', js: '7.12.51' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -77,6 +77,7 @@
     <div class="location-loading-panel">
       <div class="location-loading-spinner" aria-hidden="true"></div>
       <div id="locationLoadingMessage" class="location-loading-message">Resolving GPS location...</div>
+      <button id="locationLoadingCancel" type="button" class="location-loading-cancel">Cancel</button>
     </div>
   </div>
 
@@ -151,16 +152,17 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.27</span>
+      <span id="ver-html">index.html v7.12.28</span>
       <span>|</span>
-      <span id="ver-css">styles.css v7.12.23</span>
+      <span id="ver-css">styles.css v7.12.24</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.50</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/14/2026 9:59 AM</span>
+      <span id="ver-js">app.js v7.12.51</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 05/23/2026 11:08 PM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

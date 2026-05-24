@@ -1,4 +1,4 @@
-// app.js @version 7.12.50
+// app.js @version 7.12.51
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.50'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/14/2026 9:59 AM';
+(function(){ try{ window.APP_VERSION='7.12.51'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/23/2026 11:08 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -41,6 +41,9 @@ let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 
 let lastClickedIndex = null; // Last clicked chart data index for scroll-centering
 let lastClickedTime = null; // Last clicked chart time for Weather Data column selection
 let mobileTooltipTimer = null;
+const CHART_HEIGHT_STORAGE_KEY = 'PEVcast-chart-height-mode';
+const CHART_HEIGHT_MODES = ['Short', 'Medium', 'Tall'];
+let CHART_HEIGHT_MODE = CHART_HEIGHT_MODES.includes(localStorage.getItem(CHART_HEIGHT_STORAGE_KEY)) ? localStorage.getItem(CHART_HEIGHT_STORAGE_KEY) : 'Tall';
 const FEELS_LIKE_LINE_STORAGE_KEY = 'PEVcast-feels-like-line';
 let APPARENT_OVERLAY_ENABLED = localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY)) : false;
 const WIND_SPEED_LINE_STORAGE_KEY = 'PEVcast-wind-speed-line';
@@ -51,7 +54,7 @@ const REVERSE_GEOCODE_CACHE_STORAGE_KEY = 'PEVcast-reverse-geocode-cache-v1';
 // Gradient render modes
 // 'plugin' | 'dom' | 'axis-overlay' | 'custom-scale' | 'separate-canvas' | 'off'
 let GRADIENT_MODE = 'custom-scale';
-let GRADIENT_WIDTH = 96; // px, user selectable
+let GRADIENT_WIDTH = 56; // px, user selectable
 let GRADIENT_EXTRA_LEFT = 40; // px extra left padding
 
 function isMobileScreen(){ return window.matchMedia?.('(max-width: 640px)')?.matches || false; }
@@ -87,7 +90,47 @@ const LOCATIONS_STORAGE_KEY = 'PEVcast-locations-v1';
 const DEFAULT_LOCATION_STORAGE_KEY = 'PEVcast-default-location-v1';
 
 function $(id){ return document.getElementById(id); }
-function showLocationLoading(message='Resolving GPS location...'){ const overlay=$("locationLoadingOverlay"); const msg=$("locationLoadingMessage"); if(msg) msg.textContent=message; if(overlay){ overlay.classList.remove('hidden'); overlay.setAttribute('aria-hidden','false'); } }
+let activeGpsRequest = null;
+function getCurrentLocationSnapshot(){
+  if(!currentDataset || currentLocationLat==null || currentLocationLon==null) return null;
+  return {
+    dataset: currentDataset,
+    cityName: currentCityName || $('cityTitle')?.textContent || 'Current Location',
+    lat: currentLocationLat,
+    lon: currentLocationLon,
+    rangeIndex,
+    pastDays,
+    lastClickedIndex,
+    lastClickedTime
+  };
+}
+function restoreLocationSnapshot(snapshot){
+  if(!snapshot?.dataset) return false;
+  currentDataset=snapshot.dataset;
+  currentCityName=snapshot.cityName;
+  currentLocationLat=snapshot.lat;
+  currentLocationLon=snapshot.lon;
+  rangeIndex=snapshot.rangeIndex;
+  pastDays=snapshot.pastDays;
+  lastClickedIndex=snapshot.lastClickedIndex;
+  lastClickedTime=snapshot.lastClickedTime;
+  setCityTitle(snapshot.cityName);
+  const host=$("statusLine");
+  const sv=host ? host.querySelector('.summary-value') : null;
+  if(sv) sv.textContent="Click a point on the chart...";
+  buildChart(snapshot.dataset);
+  updateRangeButtonLabel();
+  return true;
+}
+function createGpsCancelError(){ const err=new Error('GPS lookup canceled.'); err.name='AbortError'; err.canceled=true; return err; }
+function isGpsCancelError(error){ return !!(error?.canceled || error?.name==='AbortError'); }
+function cancelActiveGpsRequest(){
+  if(!activeGpsRequest || activeGpsRequest.canceled) return;
+  activeGpsRequest.canceled=true;
+  hideLocationLoading();
+  restoreLocationSnapshot(activeGpsRequest.previousLocation);
+}
+function showLocationLoading(message='Resolving GPS location...', options={}){ const overlay=$("locationLoadingOverlay"); const msg=$("locationLoadingMessage"); const cancel=$("locationLoadingCancel"); if(msg) msg.textContent=message; if(cancel){ cancel.hidden = options.cancelable===false; cancel.onclick = options.cancelable===false ? null : cancelActiveGpsRequest; } if(overlay){ overlay.classList.remove('hidden'); overlay.setAttribute('aria-hidden','false'); } }
 function hideLocationLoading(){ const overlay=$("locationLoadingOverlay"); if(overlay){ overlay.classList.add('hidden'); overlay.setAttribute('aria-hidden','true'); } }
 function clearQuickSelectSelection(){ const qs=$("quickSelect"); if(qs) qs.value=''; }
 function isGpsTimeoutError(error){ return error?.code===3 || error?.name==='TimeoutError' || /timeout|timed out/i.test(String(error?.message||'')); }
@@ -214,12 +257,21 @@ function requestDeviceLocation(){
   });
 }
 async function loadGpsLocation(saveAsDefault=false){
-  const pos=await requestDeviceLocation();
-  const {latitude:lat, longitude:lon}=pos.coords||{};
-  if(!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS did not return valid coordinates.');
-  const location=await loadCoordinatesLocation(lat, lon, saveAsDefault);
-  clearQuickSelectSelection();
-  return location;
+  const request={ canceled:false, previousLocation:getCurrentLocationSnapshot() };
+  activeGpsRequest=request;
+  try{
+    const pos=await requestDeviceLocation();
+    if(request.canceled) throw createGpsCancelError();
+    const {latitude:lat, longitude:lon}=pos.coords||{};
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS did not return valid coordinates.');
+    if(request.canceled) throw createGpsCancelError();
+    const location=await loadCoordinatesLocation(lat, lon, saveAsDefault);
+    if(request.canceled){ restoreLocationSnapshot(request.previousLocation); throw createGpsCancelError(); }
+    clearQuickSelectSelection();
+    return location;
+  } finally {
+    if(activeGpsRequest===request) activeGpsRequest=null;
+  }
 }
 async function loadCoordinatesLocation(lat, lon, saveAsDefault=false){
   lat=Number(lat); lon=Number(lon);
@@ -427,12 +479,7 @@ const TempColorBarPlugin = {
     else if(GRADIENT_MODE==='separate-canvas'){ /* drawn by SeparateColorBar */ }
     else { /* 'dom' or 'off' */ }
   },
-  afterDraw(chart,args){ if(GRADIENT_MODE!=='custom-scale') return; const y=chart.scales.yTemp, area=chart.chartArea; if(!y||!area) return; const ctx=chart.ctx; const top=area.top, bottom=area.bottom; const lo=y.min, hi=y.max; const range=(hi-lo)||1; const anchors=[{t:lo,c:this.colorAtTemp(lo)},...this.anchors.filter(a=>a.t>lo&&a.t<hi),{t:hi,c:this.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,top,0,bottom); anchors.forEach(a=>{ const p=1-((a.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), a.c); }); const w=getGradientWidth(); const xLeft=chart.scales.yTemp.left-w;
-    ctx.save(); ctx.fillStyle=grad; ctx.fillRect(xLeft, top, w, bottom-top);
-    ctx.fillStyle = '#ffffff'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; ctx.textAlign='right'; ctx.textBaseline='middle';
-    const ticks = chart.scales.yTemp.ticks || []; for(const t of ticks){ const py = chart.scales.yTemp.getPixelForValue(t.value); if(py>=top && py<=bottom){ ctx.fillText(`${t.value}°`, chart.scales.yTemp.left-6, py); } }
-    ctx.restore();
-  }
+  afterDraw(chart,args){ if(GRADIENT_MODE!=='custom-scale') return; try{ StickyYAxisOverlay.render(chart); }catch{} }
 };
 Chart.register(TempColorBarPlugin);
 
@@ -450,6 +497,111 @@ const SeparateColorBar = {
   ensure(){ if(this.el && document.body.contains(this.el)) return this.el; let cv=document.getElementById('tempColorBarSeparate'); if(!cv){ cv=document.createElement('canvas'); cv.id='tempColorBarSeparate'; cv.style.position='fixed'; cv.style.pointerEvents='none'; cv.style.zIndex='2'; document.body.appendChild(cv); } this.el=cv; return cv; },
   render(chart){ if(GRADIENT_MODE!=='separate-canvas') return this.hide(); const y=chart.scales.yTemp, area=chart.chartArea; const cv=this.ensure(); if(!cv||!y||!area) return; const rect=chart.canvas.getBoundingClientRect(); const top=area.top+rect.top; const bottom=area.bottom+rect.top; const h=bottom-top; const w=getGradientWidth(); const gap=8; const xRight=(rect.left + y.left) - gap; const xLeft=xRight - w; const dpr=window.devicePixelRatio||1; cv.style.left=`${Math.round(xLeft)}px`; cv.style.top=`${Math.round(top)}px`; cv.style.width=`${w}px`; cv.style.height=`${h}px`; cv.width=Math.max(1,Math.floor(w*dpr)); cv.height=Math.max(1,Math.floor(h*dpr)); const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); const lo=y.min, hi=y.max; const range=(hi-lo)||1; const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t); const grad=ctx.createLinearGradient(0,0,0,h); stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); }); ctx.fillStyle=grad; ctx.fillRect(0,0,w,h); cv.style.display='block'; },
   hide(){ if(this.el){ this.el.style.display='none'; } }
+};
+
+const StickyYAxisOverlay = {
+  leftHost:null, rightHost:null, leftCanvas:null, rightCanvas:null,
+  ensure(){
+    const host=document.querySelector('.chart-container');
+    if(!host) return false;
+    if(!this.leftHost || !host.contains(this.leftHost)){
+      this.leftHost=document.getElementById('stickyYAxisLeft') || document.createElement('div');
+      this.leftHost.id='stickyYAxisLeft';
+      this.leftHost.className='sticky-y-axis sticky-y-axis-left';
+      this.leftHost.setAttribute('aria-hidden','true');
+      this.leftCanvas=document.getElementById('stickyYAxisLeftCanvas') || document.createElement('canvas');
+      this.leftCanvas.id='stickyYAxisLeftCanvas';
+      if(!this.leftCanvas.parentElement) this.leftHost.appendChild(this.leftCanvas);
+      if(!this.leftHost.parentElement) host.appendChild(this.leftHost);
+    }
+    if(!this.rightHost || !host.contains(this.rightHost)){
+      this.rightHost=document.getElementById('stickyYAxisRight') || document.createElement('div');
+      this.rightHost.id='stickyYAxisRight';
+      this.rightHost.className='sticky-y-axis sticky-y-axis-right';
+      this.rightHost.setAttribute('aria-hidden','true');
+      this.rightCanvas=document.getElementById('stickyYAxisRightCanvas') || document.createElement('canvas');
+      this.rightCanvas.id='stickyYAxisRightCanvas';
+      if(!this.rightCanvas.parentElement) this.rightHost.appendChild(this.rightCanvas);
+      if(!this.rightHost.parentElement) host.appendChild(this.rightHost);
+    }
+    return true;
+  },
+  sizeCanvas(canvas, host, dpr){
+    const rect=host.getBoundingClientRect();
+    canvas.style.width=`${rect.width}px`;
+    canvas.style.height=`${rect.height}px`;
+    canvas.width=Math.max(1, Math.round(rect.width*dpr));
+    canvas.height=Math.max(1, Math.round(rect.height*dpr));
+    const ctx=canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,rect.width,rect.height);
+    return {ctx,width:rect.width,height:rect.height};
+  },
+  render(chartInstance){
+    if(!chartInstance?.chartArea || !this.ensure()) return;
+    const yTemp=chartInstance.scales?.yTemp;
+    const yAccum=chartInstance.scales?.yAccum;
+    if(!yTemp || !yAccum) return;
+    const container=document.querySelector('.chart-container');
+    const canvasRect=chartInstance.canvas.getBoundingClientRect();
+    const containerRect=container.getBoundingClientRect();
+    const top=canvasRect.top-containerRect.top+chartInstance.chartArea.top;
+    const bottom=canvasRect.top-containerRect.top+chartInstance.chartArea.bottom;
+    const h=Math.max(1,bottom-top);
+    const dpr=window.devicePixelRatio||1;
+    const left=this.sizeCanvas(this.leftCanvas, this.leftHost, dpr);
+    const right=this.sizeCanvas(this.rightCanvas, this.rightHost, dpr);
+    this.drawTemperatureAxis(left.ctx, left.width, top, h, yTemp);
+    this.drawAccumulationAxis(right.ctx, right.width, top, h, yAccum);
+  },
+  drawTemperatureAxis(ctx, width, top, h, scale){
+    const gradientWidth=getGradientWidth();
+    const gap=8;
+    const xGrad=Math.max(0, width-gradientWidth);
+    const xLabel=xGrad+gradientWidth-4;
+    const lo=scale.min, hi=scale.max;
+    const range=(hi-lo)||1;
+    const stops=[{t:lo,c:TempColorBarPlugin.colorAtTemp(lo)}, ...TempColorBarPlugin.anchors.filter(a=>a.t>lo&&a.t<hi), {t:hi,c:TempColorBarPlugin.colorAtTemp(hi)}].sort((a,b)=>a.t-b.t);
+    const grad=ctx.createLinearGradient(0,top,0,top+h);
+    stops.forEach(s=>{ const p=1-((s.t-lo)/range); grad.addColorStop(Math.min(1,Math.max(0,p)), s.c); });
+    ctx.save();
+    ctx.fillStyle=grad;
+    ctx.fillRect(xGrad, top, gradientWidth, h);
+    ctx.font='12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.textAlign='right';
+    ctx.textBaseline='middle';
+    ctx.lineWidth=3;
+    ctx.strokeStyle='rgba(17,24,39,0.72)';
+    ctx.fillStyle='#ffffff';
+    for(const tick of (scale.ticks||[])){
+      const py=scale.getPixelForValue(tick.value);
+      if(py>=scale.top && py<=scale.bottom){
+        const label=`${tick.value}°`;
+        const y=top+(py-scale.top);
+        ctx.strokeText(label, xLabel, y);
+        ctx.fillText(label, xLabel, y);
+      }
+    }
+    ctx.restore();
+  },
+  drawAccumulationAxis(ctx, width, top, h, scale){
+    ctx.save();
+    ctx.font='12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.textAlign='right';
+    ctx.textBaseline='middle';
+    ctx.fillStyle=isDark?'#93c5fd':'#1d4ed8';
+    for(const tick of (scale.ticks||[])){
+      const value=Number(tick.value);
+      if(!Number.isInteger(value)) continue;
+      const py=scale.getPixelForValue(value);
+      if(py>=scale.top && py<=scale.bottom) ctx.fillText(`${value} mm`, width-2, top+(py-scale.top));
+    }
+    ctx.restore();
+  },
+  hide(){
+    if(this.leftHost) this.leftHost.style.display='none';
+    if(this.rightHost) this.rightHost.style.display='none';
+  }
 };
 
 // ---------- UI helpers ----------
@@ -473,6 +625,27 @@ function renderVisibleHoursTicks(totalHours){ const ticks=$("mainScrollScaleTick
 function getVisibleHoursForScale(scale, scrollerWidth, pxPerHour){ if(!scale || !scrollerWidth || !pxPerHour) return 0; return scrollerWidth / (pxPerHour * scale); }
 function getScaleForVisibleHours(visibleHours, scrollerWidth, pxPerHour){ if(!visibleHours || !scrollerWidth || !pxPerHour) return 1; return scrollerWidth / (pxPerHour * visibleHours); }
 function getXAxisMaxTicks(labelCount){ const canvas=$("weatherChart"); const scroller=$("chartScroll"); const container=document.querySelector('.chart-container'); const viewportWidth=scroller?.clientWidth || container?.clientWidth || window.innerWidth; const scrollWidth=parseFloat(canvas?.style?.width) || Number(canvas?.getAttribute?.('width')) || canvas?.getBoundingClientRect?.().width || viewportWidth; const width=(LAYOUT_MODE==='scroll') ? scrollWidth : viewportWidth; return Math.max(6, Math.min(labelCount, Math.floor(width/48))); }
+function getChartHeightForMode(availableHeight){
+  const avail=Math.max(240, Number(availableHeight)||240);
+  const mobile=isMobileScreen();
+  if(CHART_HEIGHT_MODE==='Short') return Math.min(avail, mobile ? 240 : 300);
+  if(CHART_HEIGHT_MODE==='Medium') return Math.min(avail, mobile ? 300 : 420);
+  return Math.max(avail, mobile ? 380 : 560);
+}
+function getAvailableChartHeight(){
+  const header=document.querySelector('.app-header');
+  const footer=document.querySelector('.app-footer');
+  const sumBoxes=document.querySelectorAll('.summary-box');
+  const testBanner=$("testModeBanner");
+  let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32;
+  sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8);
+  return Math.max(240, window.innerHeight-used);
+}
+function applyChartContainerHeight(){
+  const container=document.querySelector('.chart-container');
+  if(!container) return;
+  container.style.height=getChartHeightForMode(getAvailableChartHeight())+'px';
+}
 function labelTimeMs(label){ const ms=new Date(label).getTime(); return Number.isNaN(ms) ? null : ms; }
 function findCurrentOrPreviousHourIndex(labels, now=Date.now()){ if(!labels||!labels.length) return 0; let previousIdx=-1; for(let i=0;i<labels.length;i++){ const ms=labelTimeMs(labels[i]); if(ms==null) continue; if(ms<=now) previousIdx=i; else break; } if(previousIdx>=0) return previousIdx; return 0; }
 function getCurrentTimePosition(labels, now=Date.now()){ if(!labels||!labels.length) return null; const times=labels.map(labelTimeMs); for(let i=0;i<times.length;i++){ const ms=times[i]; if(ms==null) continue; if(now===ms) return i; if(now<ms){ if(i===0) return null; const prev=times[i-1]; if(prev==null || ms<=prev) return i-1; return (i-1)+((now-prev)/(ms-prev)); } } return null; }
@@ -494,7 +667,7 @@ function scheduleMobileTooltipHide(chartInstance){
   }, MOBILE_TOOLTIP_HIDE_DELAY_MS);
 }
 
-function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); const header=document.querySelector('.app-header'); const footer=document.querySelector('.app-footer'); const sumBoxes=document.querySelectorAll('.summary-box'); const testBanner=$("testModeBanner"); let used=(header?.offsetHeight||0)+(footer?.offsetHeight||0)+(testBanner?.offsetHeight||0)+32; sumBoxes.forEach(el=> used+=(el?.offsetHeight||0)+8); const avail=Math.max(240, window.innerHeight-used); container.style.height=avail+'px'; canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { maxHours } = getVisibleHoursBounds(hours); const visibleHourStops = getVisibleHoursStops(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min='0'; slider.max=String(Math.max(0, visibleHourStops.length-1)); slider.step='1'; slider.dataset.visibleHoursTotal=String(hours); renderVisibleHoursTicks(hours); }
+function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); applyChartContainerHeight(); const leftAxisWidth=getGradientWidth(); const rightAxisWidth=34; container.style.setProperty('--sticky-left-axis-width', `${leftAxisWidth}px`); container.style.setProperty('--sticky-right-axis-width', `${rightAxisWidth}px`); canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { maxHours } = getVisibleHoursBounds(hours); const visibleHourStops = getVisibleHoursStops(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min='0'; slider.max=String(Math.max(0, visibleHourStops.length-1)); slider.step='1'; slider.dataset.visibleHoursTotal=String(hours); renderVisibleHoursTicks(hours); }
   if(LAYOUT_MODE==='fit'){
     LAYOUT_SCROLL_SCALE=fitScale;
     setVisibleHoursSliderValue(slider, fitVisibleHours, hours);
@@ -672,7 +845,7 @@ function buildChart(dataset){
           left:
             GRADIENT_MODE === "plugin"
               ? GRADIENT_EXTRA_LEFT
-              : GRADIENT_EXTRA_LEFT,
+              : 0,
           top: 40,
         },
       },
@@ -806,7 +979,7 @@ function buildChart(dataset){
           position: "right",
           min: 0,
           max: accumMax,
-          display: true,
+          display: false,
           ticks: {
             display: true,
             color: isDark ? "#93c5fd" : "#1d4ed8",
@@ -844,6 +1017,7 @@ function buildChart(dataset){
   // Render external gradients
   try{ DomColorBar.render(chart); }catch{}
   try{ SeparateColorBar.render(chart); }catch{}
+  try{ StickyYAxisOverlay.render(chart); }catch{}
 
   // Hover straight line helper
   chart.canvas.addEventListener('mousemove', (evt)=>{ const e=(evt&&evt.native)?evt.native:evt; const pos=Chart.helpers.getRelativePosition(e, chart); const a=chart.chartArea; if(!a || !(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)){ clearHoverAnnotation(chart); chart.update('none'); return; } const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); setHoverAnnotation(chart, labels[i]); chart.update('none'); scheduleMobileTooltipHide(chart); });
@@ -853,6 +1027,7 @@ function buildChart(dataset){
   if(lastClickedIndex !== null && lastClickedIndex < labels.length){
     setCursorAnnotation(chart, labels[lastClickedIndex]);
     chart.update('none');
+    try{ StickyYAxisOverlay.render(chart); }catch{}
     scrollToClickedPoint();
   }
 }
@@ -900,15 +1075,16 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mWindLine"> Wind Speed Line</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
-  <details id="mLocationsMenu" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
-    <summary style="cursor:pointer;font-weight:700;user-select:none">Locations</summary>
+  <button id="mChartHeight" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Chart Height: Tall</button>
+  <div id="mLocationsSection" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
+    <div style="font-weight:700;user-select:none">Locations</div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
       <button id="mSaveDefaultLocation" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save current location as default</button>
       <label style="display:flex;align-items:center;gap:8px;margin:2px 0"><input type="checkbox" id="mGpsDefault"> Use GPS location as default</label>
       <button id="mSaveQuickLocation" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save current location to Quick List</button>
       <button id="mEditQuickLocations" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Edit Quick List</button>
     </div>
-  </details>
+  </div>
   <button id="mData" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Weather Data</button>
   <button id="mCheck" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Check for Updates</button>
   <button id="mAbout" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">About</button>
@@ -921,12 +1097,13 @@ function ensureAppMenu(){
 
   document.getElementById('btnContainer').appendChild(btn); document.body.appendChild(panel);
 
-  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mWindLine=$("mWindLine"), mData=$("mData"), mCheck=$("mCheck");
+  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mWindLine=$("mWindLine"), mHeight=$("mChartHeight"), mData=$("mData"), mCheck=$("mCheck");
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
   if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); updateScrollScaleVisibility(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
   if(mWindLine){ mWindLine.checked = WIND_SPEED_LINE_ENABLED; mWindLine.addEventListener('change', ()=>{ toggleWindSpeedLine(); mWindLine.checked=WIND_SPEED_LINE_ENABLED; /* keep menu open */ }); }
+  if(mHeight){ updateChartHeightButtonLabel(); mHeight.addEventListener('click', ()=>{ toggleChartHeight(); /* keep menu open */ }); }
   syncGpsDefaultCheckbox();
   $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
   $("mGpsDefault")?.addEventListener('change', (e)=>{ saveGpsDefault(!!e.target.checked); /* keep menu open */ });
@@ -966,6 +1143,65 @@ function dedupeHeaderControls(){
   const alt = document.querySelector('#snowRatioTop, .snow-ratio-top, [data-snow-ratio-top]');
   if(alt) alt.style.display='none';
   document.querySelectorAll('label').forEach(l=>{ try{ const txt=(l.textContent||'').trim().toLowerCase(); if(txt.includes('snow ratio')){ l.style.display='none'; const forId=l.getAttribute('for'); if(forId){ const el=$(forId); if(el) el.style.display='none'; } const sib=l.nextElementSibling; if(sib && ['SELECT','DIV'].includes(sib.tagName)) sib.style.display='none'; } }catch{} });
+}
+
+// ---------- Android/PWA back button ----------
+let _backGuardLeaving = false;
+function closeAppMenuFromBack(){
+  const panel=$("appMenuPanel");
+  if(panel && panel.style.display !== 'none'){
+    panel.style.display='none';
+    if(_menuOutsideHandler){
+      document.removeEventListener('click', _menuOutsideHandler, true);
+      _menuOutsideHandler=null;
+    }
+    return true;
+  }
+  return false;
+}
+function isVisibleOverlay(el){
+  if(!el) return false;
+  if(el.classList?.contains('hidden')) return false;
+  const style=window.getComputedStyle?.(el);
+  return !style || (style.display !== 'none' && style.visibility !== 'hidden');
+}
+function closeTransientSurfaceForBack(){
+  let closed=false;
+  closed = closeAppMenuFromBack() || closed;
+  const dataModal=$("dataModal");
+  if(isVisibleOverlay(dataModal)){ dataModal.style.display='none'; closed=true; }
+  const quickListModal=$("quickListEditorModal");
+  if(isVisibleOverlay(quickListModal)){ quickListModal.style.display='none'; closed=true; }
+  const matchModal=$("matchModal");
+  if(isVisibleOverlay(matchModal)){ matchModal.classList.add('hidden'); closed=true; }
+  const revisionLogBackdrop=$("revisionLogBackdrop");
+  if(isVisibleOverlay(revisionLogBackdrop)){ revisionLogBackdrop.remove(); closed=true; }
+  const aboutBackdrop=$("aboutBackdrop");
+  if(isVisibleOverlay(aboutBackdrop)){ aboutBackdrop.remove(); closed=true; }
+  return closed;
+}
+function pushMainBackGuard(){
+  try{ history.pushState({ pevcastBackGuard:true }, '', location.href); }catch(e){}
+}
+function installAndroidBackButtonGuard(){
+  if(!('history' in window) || !history.pushState) return;
+  try{
+    history.replaceState({ pevcastMain:true }, '', location.href);
+    pushMainBackGuard();
+  }catch(e){ return; }
+  window.addEventListener('popstate', ()=>{
+    if(_backGuardLeaving) return;
+    if(closeTransientSurfaceForBack()){
+      pushMainBackGuard();
+      return;
+    }
+    if(confirm('Close PEVcast?')){
+      _backGuardLeaving=true;
+      history.back();
+    } else {
+      pushMainBackGuard();
+    }
+  });
 }
 
 // ---------- Weather Data Popup ----------
@@ -1426,6 +1662,16 @@ function toggleRange(){
 }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; updateLayoutButtonLabel(); if(currentDataset) buildChart(currentDataset); }
 function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.textContent = (LAYOUT_MODE==='scroll') ? 'Layout: Scroll' : 'Layout: Fit'; }
+function updateChartHeightButtonLabel(){ const btn=$('mChartHeight'); if(btn) btn.textContent=`Chart Height: ${CHART_HEIGHT_MODE}`; }
+function toggleChartHeight(){
+  const idx=CHART_HEIGHT_MODES.indexOf(CHART_HEIGHT_MODE);
+  CHART_HEIGHT_MODE=CHART_HEIGHT_MODES[(idx+1)%CHART_HEIGHT_MODES.length] || 'Tall';
+  localStorage.setItem(CHART_HEIGHT_STORAGE_KEY, CHART_HEIGHT_MODE);
+  updateChartHeightButtonLabel();
+  applyChartContainerHeight();
+  if(currentDataset) buildChart(currentDataset);
+  else if(chart?.data?.labels){ applyLayout(chart.data.labels); chart.resize(); StickyYAxisOverlay.render(chart); }
+}
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; localStorage.setItem(FEELS_LIKE_LINE_STORAGE_KEY, JSON.stringify(APPARENT_OVERLAY_ENABLED)); if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
 function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
@@ -1471,8 +1717,15 @@ async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs
 
 function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
   body.maximized .app-header, body.maximized .summary-box, body.maximized .app-footer, body.maximized #testModeBanner, body.maximized #statusLine, body.maximized #matchModal, body.maximized #versionChip { display: none !important; }
+  body.maximized .compare-action { display: none !important; }
   body.maximized .app-main { padding: 0 !important; }
   body.maximized .chart-container { position: fixed !important; inset: 0 !important; z-index: 999 !important; height: 100vh !important; }
+  body.maximized #scrollScaleControlContainer { position: fixed !important; left: 12px !important; right: 12px !important; top: 58px !important; z-index: 3001 !important; margin: 0 !important; box-sizing: border-box !important; backdrop-filter: blur(6px); }
+  body.maximized .chart-container { padding-top: 76px !important; }
+  @media (max-width: 640px) {
+    body.maximized #scrollScaleControlContainer { top: 58px !important; }
+    body.maximized .chart-container { padding-top: 82px !important; }
+  }
 `; document.head.appendChild(s); }
 
 // ---------- Button Container (holds Maximize + Menu side-by-side) ----------
@@ -1480,7 +1733,7 @@ function ensureButtonContainer(){ if(document.getElementById('btnContainer')) re
 
 function ensureRangeButton(){ const btn=$("rangeToggle"); if(!btn || btn.parentElement?.id==='btnContainer') return; ensureButtonContainer(); const container=document.getElementById('btnContainer'); Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)',fontSize:'0.85rem'}); container.appendChild(btn); }
 
-function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); }catch{} }); document.getElementById('btnContainer').appendChild(b); }
+function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; const refresh=()=>{ try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart); }catch{} }; refresh(); requestAnimationFrame(refresh); }); document.getElementById('btnContainer').appendChild(b); }
 
 
 
@@ -1540,12 +1793,14 @@ async function reverseGeocode(lat, lon){
     console.warn('[ReverseGeocode] Skipping lookup: invalid coordinates', {lat, lon});
     return null;
   }
+  const lookupLat=Number(lat.toFixed(6));
+  const lookupLon=Number(lon.toFixed(6));
   const cacheKey=reverseGeocodeCacheKey(lat, lon);
   const cache=readReverseGeocodeCache();
   if(cache[cacheKey]?.label) return cache[cacheKey].label;
 
   try{
-    const params=new URLSearchParams({latitude:String(lat), longitude:String(lon), localityLanguage:'en'});
+    const params=new URLSearchParams({latitude:String(lookupLat), longitude:String(lookupLon), localityLanguage:'en'});
     const res=await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`);
     if(res.ok){
       const label=formatBigDataCloudReverseGeocode(await res.json(), lat, lon);
@@ -1559,7 +1814,7 @@ async function reverseGeocode(lat, lon){
   }
 
   try{
-    const params=new URLSearchParams({format:'jsonv2', lat:String(lat), lon:String(lon), addressdetails:'1', zoom:'18', 'accept-language':'en'});
+    const params=new URLSearchParams({format:'jsonv2', lat:String(lookupLat), lon:String(lookupLon), addressdetails:'1', zoom:'18', 'accept-language':'en'});
     const res=await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {headers:{Accept:'application/json'}});
     if(res.ok){
       const label=formatNominatimReverseGeocode(await res.json(), lat, lon);
@@ -1577,7 +1832,7 @@ async function reverseGeocode(lat, lon){
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); for (const loc of readSavedLocations()){ const opt=document.createElement('option'); opt.value=loc.id; opt.textContent=loc.name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ alert('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ if(!isGpsCancelError(err)) alert('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -1658,6 +1913,7 @@ async function loadStartupGpsWithRetry(saveAsDefault=true){
       return true;
     }catch(e){
       console.warn('[Locations] Startup GPS failed:', e);
+      if(isGpsCancelError(e)) return false;
       const timedOut=isGpsTimeoutError(e);
       hideLocationLoading();
       if(timedOut && confirm('GPS location timed out. Do you want to try again?')) continue;
@@ -1677,7 +1933,10 @@ async function loadInitialLocation(){
     const loc=saved || snapshot;
     if(loc){ await loadCityByName(loc.name, loc); updateRangeButtonLabel(); return; }
   }
-  if(await loadStartupGpsWithRetry(true)) return;
+  if(def?.mode==='gps'){
+    const snapshot=normalizeLocation(def);
+    if(snapshot){ await loadCityByName(snapshot.name, snapshot); updateRangeButtonLabel(); return; }
+  }
   await loadMoonTownshipFallback();
 }
 
@@ -1700,9 +1959,9 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.50`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.51`; } catch(e){ console.warn(e); }
   
-  installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
+  installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
   
   // Setup update banner button handlers
@@ -1723,7 +1982,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     await loadInitialLocation();
   }catch(e){ console.error(e); alert(e?.message||'Failed to load initial data.'); }
 
-  window.addEventListener('resize', ()=>{ if(LAYOUT_MODE==='fit' && currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart);}catch{} } });
+  window.addEventListener('resize', ()=>{ if(currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart);}catch{} } });
 });
 
 // ======= About Dialog =======
@@ -2009,6 +2268,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
