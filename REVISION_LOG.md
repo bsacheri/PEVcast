@@ -2,6 +2,17 @@
 
 ---
 
+## 7.12.53 - 2026-05-24
+
+### Android/PWA Navigation
+- Changed the main-screen Back guard to use a real `#pevcast-main` history entry so Samsung/installed PWA Back handling has an in-app step to intercept.
+- Kept the close confirmation behavior on the main chart screen while preserving normal closing after the user confirms.
+
+### Tests
+- Updated Playwright Back-button coverage to verify the hash-backed guard is armed after launch and re-armed after canceling the close prompt.
+
+---
+
 ## 7.12.52 - 2026-05-24
 
 ### Android/PWA Navigation
@@ -278,6 +289,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
