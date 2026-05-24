@@ -43,6 +43,7 @@ test('Android back closes open surfaces before prompting to exit', async ({ page
 test('Android back on the main chart screen asks before closing', async ({ page }) => {
   await page.goto('/index.html');
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+  await expect.poll(() => page.evaluate(() => history.state?.pevcastBackGuard === true)).toBe(true);
 
   const dialogPromise = page.waitForEvent('dialog');
   await page.evaluate(() => history.back());
@@ -50,7 +51,27 @@ test('Android back on the main chart screen asks before closing', async ({ page 
 
   expect(dialog.message()).toContain('Close PEVcast');
   await dialog.dismiss();
+  await expect.poll(() => page.evaluate(() => history.state?.pevcastBackGuard === true)).toBe(true);
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+});
+
+test('Android back close confirmation requests app close', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__pevcastCloseCalls = 0;
+    window.close = () => { window.__pevcastCloseCalls += 1; };
+  });
+  await page.goto('/index.html');
+  await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+  await expect.poll(() => page.evaluate(() => history.state?.pevcastBackGuard === true)).toBe(true);
+
+  await page.getByRole('button', { name: /Range:/ }).click();
+  const dialogPromise = page.waitForEvent('dialog');
+  await page.evaluate(() => history.back());
+  const dialog = await dialogPromise;
+
+  expect(dialog.message()).toContain('Close PEVcast');
+  await dialog.accept();
+  await expect.poll(() => page.evaluate(() => window.__pevcastCloseCalls)).toBe(1);
 });
 
 test('visible-hours scrolling keeps both y axes visible', async ({ page }) => {

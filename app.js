@@ -1,4 +1,4 @@
-// app.js @version 7.12.51
+// app.js @version 7.12.52
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.51'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/23/2026 11:08 PM';
+(function(){ try{ window.APP_VERSION='7.12.52'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '05/24/2026 2:00 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -1147,6 +1147,7 @@ function dedupeHeaderControls(){
 
 // ---------- Android/PWA back button ----------
 let _backGuardLeaving = false;
+let _backGuardPrompting = false;
 function closeAppMenuFromBack(){
   const panel=$("appMenuPanel");
   if(panel && panel.style.display !== 'none'){
@@ -1183,6 +1184,11 @@ function closeTransientSurfaceForBack(){
 function pushMainBackGuard(){
   try{ history.pushState({ pevcastBackGuard:true }, '', location.href); }catch(e){}
 }
+function requestAppCloseFromBack(){
+  _backGuardLeaving=true;
+  try{ window.close(); }catch(e){}
+  try{ history.back(); }catch(e){}
+}
 function installAndroidBackButtonGuard(){
   if(!('history' in window) || !history.pushState) return;
   try{
@@ -1190,16 +1196,19 @@ function installAndroidBackButtonGuard(){
     pushMainBackGuard();
   }catch(e){ return; }
   window.addEventListener('popstate', ()=>{
-    if(_backGuardLeaving) return;
+    if(_backGuardLeaving || _backGuardPrompting) return;
     if(closeTransientSurfaceForBack()){
       pushMainBackGuard();
       return;
     }
-    if(confirm('Close PEVcast?')){
-      _backGuardLeaving=true;
-      history.back();
-    } else {
-      pushMainBackGuard();
+    _backGuardPrompting=true;
+    pushMainBackGuard();
+    try{
+      if(confirm('Close PEVcast?')){
+        requestAppCloseFromBack();
+      }
+    } finally {
+      _backGuardPrompting=false;
     }
   });
 }
@@ -1959,7 +1968,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.51`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.52`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2268,6 +2277,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

@@ -2,6 +2,18 @@
 
 ---
 
+## 7.12.52 - 2026-05-24
+
+### Android/PWA Navigation
+- Re-armed the main-screen Back guard before showing the `Close PEVcast?` prompt so Back on first launch does not immediately close the app.
+- Added an explicit app-close request when confirming the close prompt, with a history fallback for browser contexts.
+- Prevented duplicate Back prompt handling while the close confirmation dialog is active.
+
+### Tests
+- Added Playwright coverage for first-launch Back guard state, canceling the close prompt, and accepting the close prompt after using the Range button.
+
+---
+
 ## 7.12.51 - 2026-05-23
 
 ### Chart
@@ -266,6 +278,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
