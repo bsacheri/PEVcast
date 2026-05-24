@@ -40,6 +40,19 @@ test('Android back closes open surfaces before prompting to exit', async ({ page
   await dialog.dismiss();
 });
 
+test('Android back on the main chart screen asks before closing', async ({ page }) => {
+  await page.goto('/index.html');
+  await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+
+  const dialogPromise = page.waitForEvent('dialog');
+  await page.evaluate(() => history.back());
+  const dialog = await dialogPromise;
+
+  expect(dialog.message()).toContain('Close PEVcast');
+  await dialog.dismiss();
+  await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+});
+
 test('visible-hours scrolling keeps both y axes visible', async ({ page }) => {
   await page.goto('/index.html');
   await expect(page.locator('#stickyYAxisLeftCanvas')).toBeVisible();

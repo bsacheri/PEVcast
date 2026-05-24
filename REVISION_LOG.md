@@ -4,44 +4,49 @@
 
 ## 7.12.51 - 2026-05-23
 
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
 ### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
+- Added sticky left and right y-axis overlays so temperature and accumulation scales stay visible while using the Visible Hours horizontal scroll.
+- Moved temperature labels back onto the gradient axis and tightened spacing between the gradient, chart plot area, and right-side accumulation axis.
+- Added a menu-controlled chart height toggle with Short, Medium, and Tall modes.
+- Improved maximized chart mode by hiding Chart Compare and repositioning the Visible Hours slider below floating controls on mobile.
+- Refreshed chart resizing and rendering after maximize and layout changes so sticky axes stay aligned.
+
+### Android/PWA Navigation
+- Added Android/browser Back handling for PWA use.
+- Back now closes open menus, dialogs, and subforms before leaving the main chart screen.
+- Back on the main chart screen now prompts with `Close PEVcast?`.
+
+### Locations and GPS
+- Added a Cancel button to the Resolving GPS Location overlay.
+- Canceling GPS restores the last loaded forecast/location and ignores late GPS results.
+- Stopped automatic startup geolocation requests so browsers do not warn about geolocation outside a user gesture.
+- Startup now uses saved GPS coordinates if available, otherwise falls back normally.
+- Rounded reverse-geocode lookup coordinates before sending them to geocoding providers.
 
 ### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
+- Changed the Locations menu section from collapsible to always open with a `Locations` heading.
+- Moved the mobile `Use GPS` button beside the Quick Select dropdown and made it content-width instead of full-width.
+- Added the Chart Height control to the menu.
 
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
+### Tests
+- Expanded Playwright coverage for Android Back behavior, sticky y-axes during visible-hours scrolling, GPS cancel behavior, startup geolocation behavior, mobile Quick Select/GPS layout, chart height cycling, and maximized mobile chart layout.
 
 ---
 
 ## 7.12.50 - 2026-05-14
 
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+### Chart Layout
+- Added mobile-aware temperature gradient sizing through `getGradientWidth()`, keeping the full desktop gradient while using a narrower mobile gradient.
+- Applied the responsive gradient width across the chart plugin, axis overlay, custom scale, DOM gradient, and separate-canvas color bar render paths.
+- Moved the Visible Hours control and chart above the forecast summary box so chart controls stay directly with the chart.
+- Tightened chart and app container sizing with max-width and overflow constraints to prevent mobile horizontal scrolling.
 
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
+### Mobile Header and Controls
+- Reworked mobile header and control grid constraints so Quick Select, search, GPS, radar, and action controls stay within the viewport.
+- Added mobile max-width bounds for floating header buttons to prevent off-screen overlap.
 
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
+### Versioning
+- Bumped app, cache, and version metadata from `7.12.49` to `7.12.50`.
 
 ---
 
