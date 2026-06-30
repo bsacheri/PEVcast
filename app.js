@@ -1,4 +1,4 @@
-// app.js @version 7.12.53
+// app.js @version 7.12.55
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.53'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '05/24/2026 2:20 AM';
+(function(){ try{ window.APP_VERSION='7.12.55'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '06/30/2026 7:46 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -50,6 +50,8 @@ const WIND_SPEED_LINE_STORAGE_KEY = 'PEVcast-wind-speed-line';
 let WIND_SPEED_LINE_ENABLED = localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY)) : true;
 let WIND_DISPLAY_MODE = WIND_SPEED_LINE_ENABLED ? 'line' : 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 const REVERSE_GEOCODE_CACHE_STORAGE_KEY = 'PEVcast-reverse-geocode-cache-v1';
+const DEFAULT_UI_SETTINGS_KEY = 'PEVcast-default-ui-v1';
+let PENDING_DEFAULT_VISIBLE_STOP = null;
 
 // Gradient render modes
 // 'plugin' | 'dom' | 'axis-overlay' | 'custom-scale' | 'separate-canvas' | 'off'
@@ -221,6 +223,40 @@ function saveCurrentLocationAsDefault(){
   writeDefaultLocation({ mode:'saved', locationId:match?.id||null, name:loc.name, lat:loc.lat, lon:loc.lon, savedAt:new Date().toISOString() });
   syncGpsDefaultCheckbox();
   alert(`${loc.name} saved as default.`);
+}
+function readDefaultUISettings(){ return readStoredJson(DEFAULT_UI_SETTINGS_KEY) || null; }
+function writeDefaultUISettings(obj){ writeStoredJson(DEFAULT_UI_SETTINGS_KEY, obj); }
+function saveVisibleRangeAsDefault(){
+  const slider=$('mainScrollScale');
+  let stopIndex = null;
+  if(slider && slider.value!=null){
+    stopIndex = Number.isFinite(parseFloat(slider.value)) ? parseInt(slider.value,10) : null;
+  } else {
+    // Fallback: compute nearest stop index from current layout scale
+    const total = chart?.data?.labels?.length || 24;
+    const visible = snapVisibleHours(LAYOUT_SCROLL_SCALE?getVisibleHoursForScale(LAYOUT_SCROLL_SCALE, document.getElementById('chartScroll')?.clientWidth||0,56):24, total);
+    stopIndex = getVisibleHoursStopIndex(visible, total);
+  }
+  const settings = { rangeIndex: rangeIndex, visibleStopIndex: Number.isFinite(stopIndex)?stopIndex:null, savedAt: new Date().toISOString() };
+  writeDefaultUISettings(settings);
+  const total = chart?.data?.labels?.length || 24;
+  const visHours = Number.isFinite(settings.visibleStopIndex) ? getVisibleHoursFromStopIndex(settings.visibleStopIndex, total) : getVisibleHoursFromStopIndex(0,total);
+  alert(`Saved defaults: Range=${RANGE_STATES[settings.rangeIndex]} , Visible=${formatVisibleHoursLabel(visHours, total)}`);
+}
+function applyDefaultUISettings(){
+  const settings = readDefaultUISettings();
+  if(!settings) return;
+  if(typeof settings.rangeIndex==='number' && settings.rangeIndex>=0 && settings.rangeIndex<RANGE_STATES.length){ rangeIndex = settings.rangeIndex; }
+  // apply visible hours: store pending stop index to be applied after chart layout
+  const slider=$('mainScrollScale');
+  const total = slider ? parseInt(slider.dataset.visibleHoursTotal||'',10) || chart?.data?.labels?.length || 24 : chart?.data?.labels?.length || 24;
+  // Back-compat: if old setting used visibleHours, convert to stop index
+  let savedStop = null;
+  if(typeof settings.visibleStopIndex === 'number') savedStop = settings.visibleStopIndex;
+  else if(Number.isFinite(settings.visibleHours)) savedStop = getVisibleHoursStopIndex(settings.visibleHours, total);
+  if(Number.isFinite(savedStop)){
+    PENDING_DEFAULT_VISIBLE_STOP = Math.max(0, Math.floor(savedStop));
+  }
 }
 function saveGpsDefault(enabled){
   if(enabled) writeDefaultLocation({ mode:'gps', savedAt:new Date().toISOString() });
@@ -727,6 +763,22 @@ function buildChart(dataset){
 
   applyLayout(labels);
 
+  // If there is a pending default visible stop saved earlier, apply it now
+  try{
+    if(PENDING_DEFAULT_VISIBLE_STOP !== null){
+      const slider = $('mainScrollScale');
+      const total = slider ? parseInt(slider.dataset.visibleHoursTotal||'',10) || labels.length : labels.length;
+      const stopIndex = Math.max(0, Math.min((slider?.max?parseInt(slider.max,10):Math.max(0,PENDING_DEFAULT_VISIBLE_STOP)), PENDING_DEFAULT_VISIBLE_STOP));
+      if(slider){
+        slider.value = String(PENDING_DEFAULT_VISIBLE_STOP);
+        const desired = getVisibleHoursFromStopIndex(PENDING_DEFAULT_VISIBLE_STOP, total);
+        updateVisibleHoursDisplay($('mainScrollScaleValue'), desired, getVisibleHoursBounds(total).maxHours);
+        const scroller = document.getElementById('chartScroll'); if(scroller){ LAYOUT_SCROLL_SCALE = getScaleForVisibleHours(desired, scroller.clientWidth, 56); if(desired>=getVisibleHoursBounds(total).maxHours) LAYOUT_MODE='fit'; else LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); }
+      }
+      PENDING_DEFAULT_VISIBLE_STOP = null;
+    }
+  }catch(e){ console.warn('Failed to apply pending visible stop', e); }
+
   const tempValues = temps.filter(x=>x!=null);
   const axisTempValues = APPARENT_OVERLAY_ENABLED ? tempValues.concat(apTemps.filter(x=>x!=null)) : tempValues;
   const minT = tempValues.length ? Math.min(...tempValues) : 32;
@@ -743,13 +795,40 @@ function buildChart(dataset){
   else if (maxPrecip <= 10) accumMax = 10;
   const accumTickStep = accumMax <= 5 ? 1 : (accumMax <= 10 ? 2 : 3);
   const nonZeroPrecipHours = precip.filter(v => (v || 0) > 0.0127).length;
-  const debugEl = $("rangeDebug");
-  if(debugEl){
-    const rangeLabel = pastDays > 0 ? `-${pastDays}d history` : (rangeState === 'max' ? '15d' : (rangeState === 72 ? '3d' : (rangeState === 168 ? '7d' : `${rangeState}h`)));
-    const startLabel = labels.length ? formatRangeDebugTime(labels[0]) : 'n/a';
-    const endLabel = labels.length ? formatRangeDebugTime(labels[labels.length - 1]) : 'n/a';
-    const nowLabel = (nowIdxVisible >= 0 && nowIdxVisible < labels.length) ? formatRangeDebugTime(labels[nowIdxVisible]) : 'n/a';
-    debugEl.textContent = `${rangeLabel} window | precip max: ${maxPrecip.toFixed(1)} mm | precip hours: ${nonZeroPrecipHours}/${labels.length} | now: ${nowLabel} | visible: ${startLabel} -> ${endLabel}`;
+
+  // Render point details in the status line. Shows a richer layout and respects
+  // the user's preference: only show snow accumulation details when there is
+  // measurable snow or the lowest temperature on the page is below 34°F.
+  function renderPointDetails(index){
+    try{
+      const host = $("statusLine");
+      const svEl = host ? host.querySelector('.summary-value') : null;
+      if(!svEl) return;
+      if(!Array.isArray(hourly) || !hourly.length) { svEl.textContent = 'No data'; return; }
+      const i = Math.max(0, Math.min(hourly.length-1, Number.isFinite(index)?index:0));
+      const h = hourly[i];
+      const day = calcDayAccum(hourly, i);
+      const totalSnow = snow.reduce((a,b)=>a+(Number(b)||0),0);
+      const showSnowSection = (totalSnow > 0.0) || (minT < 34);
+      const estHour = (h.temperatureF <= 32) ? ((h.precipIn||0) * getSnowRatio(h.temperatureF)) : 0;
+      const windSpd = h.windMph ? h.windMph.toFixed(1) : 'N/A';
+      const windDir = h.windDir ?? 'N/A';
+      const timeLabel = formatTooltipTime(h.time);
+      const tempLabel = `${h.temperatureF.toFixed(1)}\u00B0F`;
+      const feels = (h.apparentF!=null) ? `${h.apparentF.toFixed(1)}\u00B0F` : 'N/A';
+      const precipLabel = `${(h.precipIn||0).toFixed(1)} mm`;
+      const chance = h.precipProb != null ? `${h.precipProb}%` : 'N/A';
+      let html = `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="font-weight:800;font-size:1.02rem;min-width:160px">${timeLabel}</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="font-size:1.25rem;font-weight:900">${tempLabel} <span style="font-size:0.9rem;font-weight:600;margin-left:8px">Feels: ${feels}</span></div>
+          <div style="font-size:0.95rem;color:${isDark? '#d1d5db':'#374151'}">Precip: ${precipLabel} · Chance: ${chance} · Wind: ${windSpd} mph @ ${windDir}\u00B0</div>
+          <div style="font-size:0.92rem;color:${isDark? '#d1d5db':'#374151'}">Day Accum (Liquid): ${day.liquid.toFixed(1)} mm${showSnowSection? ` · Day Accum (Snow est): ${day.estSnow.toFixed(1)} mm`: ''}</div>
+        </div>
+      </div>`;
+      if(showSnowSection){ html += `<div style="margin-top:6px;font-size:0.9rem;color:${isDark? '#d1d5db':'#374151'}">Snow this hour: ${ (h.snowIn||0).toFixed(1) } mm · Estimated this hour: ${estHour.toFixed(1)} mm</div>`; }
+      svEl.innerHTML = html;
+    }catch(e){ console.warn('renderPointDetails failed', e); }
   }
 
   // Original scaling: liquid and snow both use same scale, no reduction for liquid
@@ -876,20 +955,9 @@ function buildChart(dataset){
         );
         const h = hourly[i];
         const day = calcDayAccum(hourly, i);
-        const host = $("statusLine");
-        const svEl = host ? host.querySelector(".summary-value") : null;
-        if (svEl) {
-          const ratio = getSnowRatio(h.temperatureF);
-          const estHour = (
-            h.temperatureF <= 32 ? (h.precipIn || 0) * ratio : 0
-          ).toFixed(1);
-          const windSpd = h.windMph ? h.windMph.toFixed(1) : "N/A";
-          const windDir = h.windDir ?? "N/A";
-          const snowAccumText = hidesnow ? "" : `, Day Accum (Snow): ${day.estSnow.toFixed(1)} mm`;
-          svEl.textContent = `${formatPointFooter(h.time)} - Temp: ${h.temperatureF.toFixed(1)}\u00B0, Precip: ${h.precipIn.toFixed(1)} mm, Snow: ${h.snowIn.toFixed(1)} mm, Rain: ${h.rainIn.toFixed(1)} mm, Est Snow: ${estHour} mm, Chance: ${h.precipProb ?? "N/A"}%, Wind: ${windSpd} mph @ ${windDir}\u00B0, Day Accum (Liquid): ${day.liquid.toFixed(1)} mm${snowAccumText}`;
-        }
         lastClickedIndex = i;
         lastClickedTime = labels[i];
+        renderPointDetails(i);
         setCursorAnnotation(chart, labels[i]);
         chart.update();
         scheduleMobileTooltipHide(chart);
@@ -1019,6 +1087,13 @@ function buildChart(dataset){
   try{ SeparateColorBar.render(chart); }catch{}
   try{ StickyYAxisOverlay.render(chart); }catch{}
 
+  // Initialize Point details: prefer previously clicked point, otherwise use "now" position
+  try{
+    if(lastClickedIndex !== null && lastClickedIndex < labels.length){ renderPointDetails(lastClickedIndex); }
+    else if(typeof nowIdxVisible === 'number' && nowIdxVisible >= 0 && nowIdxVisible < labels.length){ renderPointDetails(nowIdxVisible); }
+    else { renderPointDetails(0); }
+  }catch(e){ /* ignore */ }
+
   // Hover straight line helper
   chart.canvas.addEventListener('mousemove', (evt)=>{ const e=(evt&&evt.native)?evt.native:evt; const pos=Chart.helpers.getRelativePosition(e, chart); const a=chart.chartArea; if(!a || !(pos.x>=a.left&&pos.x<=a.right&&pos.y>=a.top&&pos.y<=a.bottom)){ clearHoverAnnotation(chart); chart.update('none'); return; } const sx=chart.scales.x; const idx = sx.getValueForPixel(pos.x); const i = Math.max(0, Math.min(labels.length-1, typeof idx==='number'? Math.round(idx): 0)); setHoverAnnotation(chart, labels[i]); chart.update('none'); scheduleMobileTooltipHide(chart); });
   chart.canvas.addEventListener('mouseleave', ()=>{ clearHoverAnnotation(chart); chart.update('none'); });
@@ -1076,6 +1151,7 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
   <button id="mChartHeight" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Chart Height: Tall</button>
+  <button id="mSaveUISettings" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save Visible Range</button>
   <div id="mLocationsSection" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
     <div style="font-weight:700;user-select:none">Locations</div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
@@ -1108,6 +1184,7 @@ function ensureAppMenu(){
   $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
   $("mGpsDefault")?.addEventListener('change', (e)=>{ saveGpsDefault(!!e.target.checked); /* keep menu open */ });
   $("mSaveQuickLocation")?.addEventListener('click', ()=>{ saveCurrentLocationToQuickList(); /* keep menu open */ });
+  $("mSaveUISettings")?.addEventListener('click', ()=>{ saveVisibleRangeAsDefault(); /* keep menu open */ });
   $("mEditQuickLocations")?.addEventListener('click', ()=>{ showQuickListEditor(); /* keep menu open */ });
   if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
@@ -1973,10 +2050,12 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.53`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.55`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
+  // Apply saved UI defaults (range & visible hours) if present
+  try{ applyDefaultUISettings(); updateRangeButtonLabel(); }catch(e){ console.warn('Failed to apply default UI settings', e); }
   
   // Setup update banner button handlers
   $("updateReloadBtn")?.addEventListener("click", reloadForUpdate);
@@ -1991,6 +2070,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("layoutToggle")?.addEventListener("click", toggleLayout);
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
+  $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
 
   try{
     await loadInitialLocation();
@@ -2282,6 +2362,8 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
+
 
 
 
