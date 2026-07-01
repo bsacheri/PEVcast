@@ -1,5 +1,5 @@
 
-/* styles.css @version 7.12.26 */
+/* styles.css @version 7.12.27 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
@@ -21,9 +21,9 @@ body.light .coords-popup { background:rgba(243,244,246,0.97); color:#111827; bor
 .app-main { width:100%; max-width:100%; padding:0.75rem; overflow-x:hidden; }
 .summary-box { display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.75rem; border-radius:0.5rem; background:rgba(31,41,55,0.8); margin-bottom:0.75rem; gap:1rem; }
 .forecast-summary { flex-direction:column; align-items:stretch; gap:0.45rem; }
-.summary-top { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.summary-top { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding-top:0.4rem; border-top:1px solid rgba(255,255,255,0.12); }
 .summary-left { display:flex; gap:0.25rem; flex-wrap:wrap; align-items:baseline; }
-.summary-details { display:flex; flex-direction:column; gap:0.35rem; padding-top:0.4rem; border-top:1px solid rgba(255,255,255,0.12); }
+.summary-details { display:flex; flex-direction:column; gap:0.35rem; }
 .summary-item { display:flex; gap:0.25rem; align-items:baseline; }
 .summary-label { font-size:0.85rem; opacity:0.8; }
 .summary-value { font-weight:600; }
@@ -45,7 +45,7 @@ canvas#weatherChart { display:block; }
 .visible-hours-ticks span::before { content:""; display:block; width:1px; height:5px; margin:0 auto 2px; background:rgba(229,231,235,0.45); }
 body.light .visible-hours-ticks { color:rgba(17,24,39,0.68); }
 body.light .visible-hours-ticks span::before { background:rgba(17,24,39,0.38); }
-body.light .summary-details { border-top-color:rgba(17,24,39,0.14); }
+body.light .summary-top { border-top-color:rgba(17,24,39,0.14); }
 .test-banner { text-align:center; padding:0.35rem 0.5rem; background:rgba(234,179,8,0.15); border-bottom:1px solid rgba(234,179,8,0.4); font-size:0.85rem; }
 .update-banner { display:flex; align-items:center; justify-content:center; gap:0.75rem; padding:0.5rem 1rem; background:rgba(59,130,246,0.15); border-bottom:1px solid rgba(59,130,246,0.4); font-size:0.9rem; flex-wrap:wrap; }
 .update-btn { padding:0.35rem 0.75rem; background:#3b82f6; color:#ffffff; border:none; border-radius:0.375rem; cursor:pointer; font-size:0.85rem; font-weight:600; transition:background 0.2s; }
@@ -135,6 +135,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
 
 .compare-action { display:flex; justify-content:center; gap:0.5rem; padding:0 0 0.75rem; flex-wrap:wrap; }
 #chartCompareBtn, #skyDiffBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
+
 
 
 

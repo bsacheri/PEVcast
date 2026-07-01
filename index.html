@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.30', css: '7.12.26', js: '7.12.55' };
+    window.FILE_VERSIONS = { html: '7.12.31', css: '7.12.27', js: '7.12.56' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -100,6 +100,11 @@
     </section>
 
     <section class="summary-box forecast-summary">
+      <div class="summary-details">
+        <div id="statusLine" class="summary-item">
+          <span class="summary-value">Click a point on the chart...</span>
+        </div>
+      </div>
       <div class="summary-top">
         <div class="summary-left">
           <div class="summary-item">
@@ -123,12 +128,6 @@
           <span id="sunTimes" class="summary-suntimes">Forecast Updated: n/a | Sunrise: n/a | Sunset: n/a</span>
         </div>
       </div>
-      <div class="summary-details">
-        <div id="statusLine" class="summary-item">
-          <span class="summary-label">Point:</span>
-          <span class="summary-value">Click a point on the chart...</span>
-        </div>
-      </div>
     </section>
 
     <section class="compare-action">
@@ -149,16 +148,17 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.30</span>
+      <span id="ver-html">index.html v7.12.31</span>
       <span>|</span>
-      <span id="ver-css">styles.css v7.12.26</span>
+      <span id="ver-css">styles.css v7.12.27</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.55</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 06/30/2026 7:46 PM</span>
+      <span id="ver-js">app.js v7.12.56</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 07/01/2026 10:57 AM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

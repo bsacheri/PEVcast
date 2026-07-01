@@ -13,7 +13,11 @@
         "${workspaceFolder}\\scripts\\bump-version.ps1",
         "-CheckOnly"
       ],
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     },
     {
       "label": "PEVcast: Sync Versions Now",

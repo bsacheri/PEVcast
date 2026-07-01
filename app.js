@@ -1,4 +1,4 @@
-// app.js @version 7.12.55
+// app.js @version 7.12.56
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.55'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '06/30/2026 7:46 PM';
+(function(){ try{ window.APP_VERSION='7.12.56'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/01/2026 10:57 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -770,10 +770,18 @@ function buildChart(dataset){
       const total = slider ? parseInt(slider.dataset.visibleHoursTotal||'',10) || labels.length : labels.length;
       const stopIndex = Math.max(0, Math.min((slider?.max?parseInt(slider.max,10):Math.max(0,PENDING_DEFAULT_VISIBLE_STOP)), PENDING_DEFAULT_VISIBLE_STOP));
       if(slider){
-        slider.value = String(PENDING_DEFAULT_VISIBLE_STOP);
-        const desired = getVisibleHoursFromStopIndex(PENDING_DEFAULT_VISIBLE_STOP, total);
+        slider.value = String(stopIndex);
+        const desired = getVisibleHoursFromStopIndex(stopIndex, total);
         updateVisibleHoursDisplay($('mainScrollScaleValue'), desired, getVisibleHoursBounds(total).maxHours);
-        const scroller = document.getElementById('chartScroll'); if(scroller){ LAYOUT_SCROLL_SCALE = getScaleForVisibleHours(desired, scroller.clientWidth, 56); if(desired>=getVisibleHoursBounds(total).maxHours) LAYOUT_MODE='fit'; else LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); }
+        const scroller = document.getElementById('chartScroll');
+        if(scroller){
+          LAYOUT_SCROLL_SCALE = getScaleForVisibleHours(desired, scroller.clientWidth, 56);
+          if(desired>=getVisibleHoursBounds(total).maxHours) LAYOUT_MODE='fit'; else LAYOUT_MODE='scroll';
+          updateLayoutButtonLabel();
+          applyLayout(labels);
+          slider.value = String(stopIndex);
+          updateVisibleHoursDisplay($('mainScrollScaleValue'), desired, getVisibleHoursBounds(total).maxHours);
+        }
       }
       PENDING_DEFAULT_VISIBLE_STOP = null;
     }
@@ -1150,8 +1158,8 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mWindLine"> Wind Speed Line</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
-  <button id="mChartHeight" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Chart Height: Tall</button>
   <button id="mSaveUISettings" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save Visible Range</button>
+  <button id="mChartHeight" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Chart Height: Tall</button>
   <div id="mLocationsSection" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
     <div style="font-weight:700;user-select:none">Locations</div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
@@ -2050,7 +2058,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.55`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.56`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2362,6 +2370,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

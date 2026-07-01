@@ -2,7 +2,7 @@
 
 ---
 
-## 7.12.55 - 2026-06-30
+## 7.12.56 - 2026-07-01
 
 > REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
 
@@ -18,11 +18,7 @@
 ### Locations
 - Updated saved locations, GPS defaults, or reverse-geocoding behavior.
 
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
 ### Versioning
-- Updated PWA, cache, or published version metadata.
 - Updated version automation, release notes, or cache-version syncing.
 
 ### Maintenance
@@ -32,29 +28,25 @@
 
 ---
 
-## 7.12.54 - 2026-06-30
+## 7.12.55 - 2026-06-30
 
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+### Visible Range Defaults
+- Added a `Save Visible Range` command to the app menu directly above `Chart Height`.
+- Saving now stores the current chart range and Visible Hours slider stop as the user's default view.
+- Restoring saved defaults now waits until after the chart layout is rebuilt, so the saved Visible Hours selection is not overwritten during page reload.
+- Fixed reload behavior where the Visible Hours slider moved to the saved position but the chart itself still rendered at the previous hours scale.
 
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
+### Point Details
+- Removed the `Range Debug` row from the forecast summary below the chart.
+- Reworked the `Point` details area into a larger, more readable weather-card style layout with time, temperature, feels-like temperature, precipitation, precipitation chance, wind, and day liquid accumulation.
+- Removed the `Point:` caption and moved the Point details above the Total Rain / Total Snow / Wind Speed summary row.- On page load, the Point details now default to the current time from the chart, unless the user already clicked a chart point.
+- Snow details now stay hidden unless there is measurable snow or the lowest temperature in the visible chart is below 34°F.
 
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
+### External Tools
+- Added a `SkyDiff` button next to `Chart Compare` that opens `https://bsacheri.github.io/FreeWeatherAPICompare/` in a new tab.
 
 ### Versioning
-- Updated version automation, release notes, or cache-version syncing.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
+- Updated published app, service worker, and version metadata through `7.12.55`.
 
 ---
 
@@ -345,6 +337,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
