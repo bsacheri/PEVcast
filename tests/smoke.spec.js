@@ -24,7 +24,16 @@ test('PEVcast homepage renders the main controls', async ({ page }) => {
   expect(pageErrors).toEqual([]);
 });
 
-test('Android back closes open surfaces before prompting to exit', async ({ page }) => {
+test('Android back closes open surfaces before requesting app close', async ({ page }) => {
+  let closeCalls = 0;
+  await page.exposeFunction('__recordPevcastClose', () => { closeCalls += 1; });
+  await page.addInitScript(() => {
+    window.__pevcastCloseCalls = 0;
+    window.close = () => {
+      window.__pevcastCloseCalls += 1;
+      window.__recordPevcastClose();
+    };
+  });
   await page.goto('/index.html');
 
   await page.getByRole('button', { name: /Menu/ }).click();
@@ -32,35 +41,57 @@ test('Android back closes open surfaces before prompting to exit', async ({ page
 
   await page.evaluate(() => history.back());
   await expect(page.locator('#appMenuPanel')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.__pevcastCloseCalls)).toBe(0);
 
-  const dialogPromise = page.waitForEvent('dialog');
   await page.evaluate(() => history.back());
-  const dialog = await dialogPromise;
-  expect(dialog.message()).toContain('Close PEVcast');
-  await dialog.dismiss();
+  await expect.poll(() => closeCalls).toBe(1);
 });
 
-test('Android back on the main chart screen asks before closing', async ({ page }) => {
+test('Android back on the main chart screen requests app close without prompting', async ({ page }) => {
+  let closeCalls = 0;
+  let confirmCalls = 0;
+  await page.exposeFunction('__recordPevcastClose', () => { closeCalls += 1; });
+  await page.exposeFunction('__recordPevcastConfirm', () => { confirmCalls += 1; });
+  await page.addInitScript(() => {
+    window.__pevcastCloseCalls = 0;
+    window.__pevcastConfirmCalls = 0;
+    window.close = () => {
+      window.__pevcastCloseCalls += 1;
+      window.__recordPevcastClose();
+    };
+    window.confirm = () => {
+      window.__pevcastConfirmCalls += 1;
+      window.__recordPevcastConfirm();
+      return false;
+    };
+  });
   await page.goto('/index.html');
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
   await expect.poll(() => page.evaluate(() => history.state?.pevcastBackGuard === true)).toBe(true);
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#pevcast-main');
 
-  const dialogPromise = page.waitForEvent('dialog');
   await page.evaluate(() => history.back());
-  const dialog = await dialogPromise;
-
-  expect(dialog.message()).toContain('Close PEVcast');
-  await dialog.dismiss();
-  await expect.poll(() => page.evaluate(() => history.state?.pevcastBackGuard === true)).toBe(true);
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#pevcast-main');
-  await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+  await expect.poll(() => closeCalls).toBe(1);
+  expect(confirmCalls).toBe(0);
 });
 
-test('Android back close confirmation requests app close', async ({ page }) => {
+test('Android back after using Range requests app close without prompting', async ({ page }) => {
+  let closeCalls = 0;
+  let confirmCalls = 0;
+  await page.exposeFunction('__recordPevcastClose', () => { closeCalls += 1; });
+  await page.exposeFunction('__recordPevcastConfirm', () => { confirmCalls += 1; });
   await page.addInitScript(() => {
     window.__pevcastCloseCalls = 0;
-    window.close = () => { window.__pevcastCloseCalls += 1; };
+    window.__pevcastConfirmCalls = 0;
+    window.close = () => {
+      window.__pevcastCloseCalls += 1;
+      window.__recordPevcastClose();
+    };
+    window.confirm = () => {
+      window.__pevcastConfirmCalls += 1;
+      window.__recordPevcastConfirm();
+      return false;
+    };
   });
   await page.goto('/index.html');
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
@@ -68,13 +99,9 @@ test('Android back close confirmation requests app close', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#pevcast-main');
 
   await page.getByRole('button', { name: /Range:/ }).click();
-  const dialogPromise = page.waitForEvent('dialog');
   await page.evaluate(() => history.back());
-  const dialog = await dialogPromise;
-
-  expect(dialog.message()).toContain('Close PEVcast');
-  await dialog.accept();
-  await expect.poll(() => page.evaluate(() => window.__pevcastCloseCalls)).toBe(1);
+  await expect.poll(() => closeCalls).toBe(1);
+  expect(confirmCalls).toBe(0);
 });
 
 test('visible-hours scrolling keeps both y axes visible', async ({ page }) => {
@@ -109,7 +136,7 @@ test('visible-hours scrolling keeps both y axes visible', async ({ page }) => {
 test('GPS resolving overlay can be canceled back to the last location', async ({ page }) => {
   await page.goto('/index.html');
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
-  await expect(page.locator('#rangeDebug')).toContainText('24h window');
+  await expect(page.locator('#mainScrollScaleValue')).toContainText('24h');
 
   const dialogs = [];
   page.on('dialog', async (dialog) => {
@@ -196,7 +223,7 @@ test('menu cycles chart between three heights', async ({ page }) => {
 test('maximized mobile hides chart compare and moves visible-hours below buttons', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 860 });
   await page.goto('/index.html');
-  await expect(page.locator('#rangeDebug')).toContainText('24h window', { timeout: 15000 });
+  await expect(page.locator('#mainScrollScaleValue')).toContainText('24h', { timeout: 15000 });
 
   await page.locator('#chartMaxBtn').click();
 

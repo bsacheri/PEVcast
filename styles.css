@@ -1,5 +1,5 @@
 
-/* styles.css @version 7.12.27 */
+/* styles.css @version 7.12.28 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
@@ -52,6 +52,11 @@ body.light .summary-top { border-top-color:rgba(17,24,39,0.14); }
 .update-btn:hover { background:#2563eb; }
 .update-dismiss-btn { padding:0.35rem 0.75rem; background:transparent; color:#a3a3a3; border:none; border-radius:0.375rem; cursor:pointer; font-size:0.85rem; transition:color 0.2s; }
 .update-dismiss-btn:hover { color:#ffffff; }
+body.light .update-banner { background:rgba(37,99,235,0.1); border-bottom-color:rgba(37,99,235,0.28); color:#111827; }
+body.light .update-btn { background:#2563eb; color:#ffffff; border:1px solid #1d4ed8; }
+body.light .update-btn:hover { background:#1d4ed8; }
+body.light .update-dismiss-btn { background:#ffffff; color:#374151; border:1px solid #d1d5db; }
+body.light .update-dismiss-btn:hover { background:#f3f4f6; color:#111827; border-color:#9ca3af; }
 .hidden { display:none !important; }
 .location-loading { position:fixed; inset:0; z-index:4000; display:flex; align-items:center; justify-content:center; padding:1rem; background:rgba(17,24,39,0.48); backdrop-filter:blur(3px); }
 .location-loading-panel { display:flex; flex-direction:column; align-items:center; gap:0.75rem; min-width:220px; max-width:min(90vw, 340px); padding:1.1rem 1.25rem; border-radius:0.65rem; border:1px solid rgba(255,255,255,0.16); background:rgba(17,24,39,0.96); color:#f9fafb; box-shadow:0 12px 32px rgba(0,0,0,0.35); text-align:center; }
@@ -135,6 +140,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
 
 .compare-action { display:flex; justify-content:center; gap:0.5rem; padding:0 0 0.75rem; flex-wrap:wrap; }
 #chartCompareBtn, #skyDiffBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
+
 
 
 

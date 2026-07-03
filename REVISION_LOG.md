@@ -2,7 +2,7 @@
 
 ---
 
-## 7.12.56 - 2026-07-01
+## 7.12.57 - 2026-07-03
 
 > REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
 
@@ -18,8 +18,21 @@
 ### Locations
 - Updated saved locations, GPS defaults, or reverse-geocoding behavior.
 
-### Versioning
-- Updated version automation, release notes, or cache-version syncing.
+### Maintenance
+- Updated application behavior in app.js.
+- Updated shared styling in styles.css.
+
+---
+
+## Unreleased
+
+### Android Back Button
+- Removed the `Close PEVcast?` confirmation prompt from the main-screen Back flow.
+- Back still closes open menus and dialogs before requesting the app close.
+
+---
+
+## 7.12.56 - 2026-07-01
 
 ### Maintenance
 - Updated application behavior in app.js.
@@ -337,6 +350,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
