@@ -1,10 +1,10 @@
 {
     "app":  "PEVcast",
-    "version":  "7.12.57",
+    "version":  "7.12.58",
     "html":  "7.12.31",
     "css":  "7.12.28",
-    "js":  "7.12.57",
-    "timestamp":  "2026-07-03T19:45:53Z",
+    "js":  "7.12.58",
+    "timestamp":  "2026-07-09T03:55:37Z",
     "updateAvailable":  false,
     "releaseNotes":  "Chart: Updated chart rendering, annotations, labels, or weather overlays. Menu and Dialogs: Updated menu options, About dialog controls, or app dialogs. Weather Data Popup: Updated the Hourly Weather Data popup display, selection, or copy behavior."
 }

@@ -1,4 +1,4 @@
-// app.js @version 7.12.57
+// app.js @version 7.12.58
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.57'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/03/2026 3:45 PM';
+(function(){ try{ window.APP_VERSION='7.12.58'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/08/2026 11:55 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -898,11 +898,11 @@ function buildChart(dataset){
 
   const precipChanceFill = (context) => {
     const area = context.chart.chartArea;
-    if (!area) return 'rgba(147,197,253,0.18)';
+    if (!area) return 'rgba(147,197,253,0.78)';
     const gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
-    gradient.addColorStop(0, 'rgba(147,197,253,0.34)');
-    gradient.addColorStop(0.55, 'rgba(96,165,250,0.16)');
-    gradient.addColorStop(1, 'rgba(59,130,246,0.02)');
+    gradient.addColorStop(0, 'rgba(147,197,253,0.94)');
+    gradient.addColorStop(0.55, 'rgba(96,165,250,0.80)');
+    gradient.addColorStop(1, 'rgba(59,130,246,0.10)');
     return gradient;
   };
 
@@ -2049,7 +2049,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.57`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.58`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2361,6 +2361,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 
