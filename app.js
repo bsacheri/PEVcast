@@ -1,4 +1,4 @@
-// app.js @version 7.12.58
+// app.js @version 7.12.60
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.58'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/08/2026 11:55 PM';
+(function(){ try{ window.APP_VERSION='7.12.60'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/16/2026 9:51 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -408,7 +408,7 @@ async function fetchForecastLive(lat, lon, pastDaysParam=0){
     + `&hourly=temperature_2m,apparent_temperature,precipitation,rain,snowfall,wind_speed_10m,wind_direction_10m,precipitation_probability`
     + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset`
     + `&timezone=auto&forecast_days=16&wind_speed_unit=mph&precipitation_unit=mm`
-    + (pastDaysParam > 0 ? `&past_days=${pastDaysParam}` : '');
+    + (pastDaysParam > 0 ? `&past_days=${pastDaysParam}` : '&past_hours=4');
   const res = await fetch(url); if (!res.ok) throw new Error('Forecast fetch failed'); const fetchedAt = res.headers.get('date') || new Date().toISOString();
   const data = await res.json(); data._fetchedAt = fetchedAt; return data;
 }
@@ -933,7 +933,7 @@ function buildChart(dataset){
             GRADIENT_MODE === "plugin"
               ? GRADIENT_EXTRA_LEFT
               : 0,
-          top: 40,
+          top: rangeState !== 24 ? 18 : 19,
         },
       },
       onClick: (evt) => {
@@ -2049,7 +2049,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.58`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.60`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2361,6 +2361,8 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
+
 
 
 

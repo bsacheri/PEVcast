@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.31', css: '7.12.28', js: '7.12.58' };
+    window.FILE_VERSIONS = { html: '7.12.32', css: '7.12.29', js: '7.12.60' };
   </script>
   <script src="app.js" defer></script>
 </head>
@@ -33,7 +33,6 @@
   <header class="app-header">
     <div class="title-group">
       <h1 id="appTitle">PEVcast</h1>
-      <div id="cityTitle" class="city-title">Moon Township, PA</div>
     </div>
     <div class="controls-group">
       <select id="quickSelect" class="quick-select" title="Quick Select">
@@ -93,6 +92,8 @@
       </div>
     </div>
 
+    <div id="cityTitle" class="city-title forecast-location-title">Moon Township, PA</div>
+
     <section class="chart-container">
       <div id="chartScroll" class="chart-scroll">
         <canvas id="weatherChart"></canvas>
@@ -148,16 +149,18 @@
 
   <footer class="app-footer">
     <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.31</span>
+      <span id="ver-html">index.html v7.12.32</span>
       <span>|</span>
-      <span id="ver-css">styles.css v7.12.28</span>
+      <span id="ver-css">styles.css v7.12.29</span>
       <span>|</span>
-      <span id="ver-js">app.js v7.12.58</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 07/08/2026 11:55 PM</span>
+      <span id="ver-js">app.js v7.12.60</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 07/16/2026 9:51 PM</span>
     </div>
   </footer>
 </body>
 </html>
+
+
 
 
 
