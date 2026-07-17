@@ -1,5 +1,13 @@
 # Exclude files containing "testdata" in the name
 *testdata*
 
+# Local API keys and private config
+config.js
+config.private.js
+.env
+
 # Node/Playwright dependencies
 node_modules/
+test-results/
+playwright-report/
+*.log

@@ -1,4 +1,4 @@
-// app.js @version 7.12.60
+// app.js @version 7.12.61
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.60'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/16/2026 9:51 PM';
+(function(){ try{ window.APP_VERSION='7.12.61'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/17/2026 2:20 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -48,6 +48,10 @@ const FEELS_LIKE_LINE_STORAGE_KEY = 'PEVcast-feels-like-line';
 let APPARENT_OVERLAY_ENABLED = localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(FEELS_LIKE_LINE_STORAGE_KEY)) : false;
 const WIND_SPEED_LINE_STORAGE_KEY = 'PEVcast-wind-speed-line';
 let WIND_SPEED_LINE_ENABLED = localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY)) : true;
+const AIR_QUALITY_INDEX_STORAGE_KEY = 'PEVcast-air-quality-index';
+let AIR_QUALITY_INDEX_ENABLED = localStorage.getItem(AIR_QUALITY_INDEX_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(AIR_QUALITY_INDEX_STORAGE_KEY)) : false;
+const AIRNOW_TIMEOUT_MS = 4500;
+const AIRNOW_STALE_MS = 3 * 60 * 60 * 1000;
 let WIND_DISPLAY_MODE = WIND_SPEED_LINE_ENABLED ? 'line' : 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
 const REVERSE_GEOCODE_CACHE_STORAGE_KEY = 'PEVcast-reverse-geocode-cache-v1';
 const DEFAULT_UI_SETTINGS_KEY = 'PEVcast-default-ui-v1';
@@ -56,7 +60,7 @@ let PENDING_DEFAULT_VISIBLE_STOP = null;
 // Gradient render modes
 // 'plugin' | 'dom' | 'axis-overlay' | 'custom-scale' | 'separate-canvas' | 'off'
 let GRADIENT_MODE = 'custom-scale';
-let GRADIENT_WIDTH = 56; // px, user selectable
+let GRADIENT_WIDTH = 34; // px, user selectable
 let GRADIENT_EXTRA_LEFT = 40; // px extra left padding
 
 function isMobileScreen(){ return window.matchMedia?.('(max-width: 640px)')?.matches || false; }
@@ -394,7 +398,13 @@ async function loadWeatherData(cityName, lat, lon, pastDaysParam=0){
     }
     throw new Error('Test Mode: No TEST_MODE_DATA / test_data.json / TEST_DATA found.');
   }
-  const apiData = await fetchForecastLive(lat, lon, pastDaysParam); return buildDataFromLive(apiData);
+  const apiData = await fetchForecastLive(lat, lon, pastDaysParam);
+  let airQualityData = null;
+  if(AIR_QUALITY_INDEX_ENABLED){
+    try{ airQualityData = await fetchAirQualityLive(lat, lon, pastDaysParam); }
+    catch(e){ console.warn('Air quality fetch failed:', e); }
+  }
+  return buildDataFromLive(apiData, airQualityData);
 }
 
 // ---------- Open-Meteo live fetch ----------
@@ -413,8 +423,124 @@ async function fetchForecastLive(lat, lon, pastDaysParam=0){
   const data = await res.json(); data._fetchedAt = fetchedAt; return data;
 }
 
-function buildDataFromLive(apiData){
+function getAirNowApiKey(){
+  return String(window.PEVCAST_CONFIG?.AIRNOW_API_KEY || window.AIRNOW_API_KEY || '').trim();
+}
+
+function fetchWithTimeout(url, timeoutMs){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(()=>clearTimeout(timer));
+}
+
+function formatLocalHourKey(date){
+  const d = date instanceof Date ? date : new Date(date);
+  if(Number.isNaN(d.getTime())) return null;
+  const mon=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  const hour=String(d.getHours()).padStart(2,'0');
+  return `${d.getFullYear()}-${mon}-${day}T${hour}`;
+}
+
+function parseAirNowObservedTime(row){
+  const dateObserved = row?.DateObserved || row?.dateObserved;
+  const hourObserved = row?.HourObserved ?? row?.hourObserved;
+  const localTimeZone = row?.LocalTimeZone || row?.localTimeZone || 'UTC';
+  if(dateObserved && hourObserved != null){
+    const d = String(dateObserved).includes('T') ? String(dateObserved).substring(0,10) : String(dateObserved);
+    const h = String(hourObserved).padStart(2,'0');
+    const tz = localTimeZone === 'UTC' ? 'Z' : '';
+    const parsed = new Date(`${d}T${h}:00:00${tz}`);
+    if(!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  if(dateObserved){
+    const parsed = new Date(dateObserved);
+    if(!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+}
+
+function normalizeAirNowRows(rows){
+  if(!Array.isArray(rows) || !rows.length) throw new Error('AirNow returned no nearby monitoring data.');
+  const numericRows = rows.map(row=>({ row, aqi:Number(row?.AQI ?? row?.aqi) })).filter(item=>Number.isFinite(item.aqi));
+  if(!numericRows.length) throw new Error('AirNow response did not include numeric AQI.');
+  numericRows.sort((a,b)=>b.aqi-a.aqi);
+  const best = numericRows[0];
+  const observedAt = parseAirNowObservedTime(best.row);
+  if(!observedAt) throw new Error('AirNow response did not include a valid observation time.');
+  if(Date.now() - observedAt.getTime() > AIRNOW_STALE_MS) throw new Error('AirNow observation is stale.');
+  return {
+    value: best.aqi,
+    observedAt: observedAt.toISOString(),
+    observedHourKey: formatLocalHourKey(observedAt),
+    reportingArea: best.row.ReportingArea || best.row.reportingArea || '',
+    parameterName: best.row.ParameterName || best.row.parameterName || ''
+  };
+}
+
+async function fetchAirNowAqi(lat, lon){
+  const apiKey = getAirNowApiKey();
+  if(!apiKey) throw new Error('AirNow API key is not configured.');
+  const params = new URLSearchParams({
+    format: 'application/json',
+    latitude: String(lat),
+    longitude: String(lon),
+    distance: '25',
+    API_KEY: apiKey
+  });
+  const url = `https://www.airnowapi.org/aq/observation/latLong/current/?${params.toString()}`;
+  const res = await fetchWithTimeout(url, AIRNOW_TIMEOUT_MS);
+  if(!res.ok) throw new Error(`AirNow fetch failed: HTTP ${res.status}`);
+  const text = await res.text();
+  if(/^\s*</.test(text)) throw new Error('AirNow returned an XML/error response.');
+  let data;
+  try{ data = JSON.parse(text); }catch{ throw new Error('AirNow returned invalid JSON.'); }
+  return normalizeAirNowRows(data);
+}
+
+async function fetchOpenMeteoAqi(lat, lon, pastDaysParam=0){
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}`
+    + `&hourly=us_aqi&timezone=auto&forecast_days=7`
+    + (pastDaysParam > 0 ? `&past_days=${Math.min(pastDaysParam, 7)}` : '&past_hours=4');
+  const res = await fetch(url); if (!res.ok) throw new Error('Air quality fetch failed');
+  const data = await res.json();
+  return { openMeteo: data, airNow: null, fallbackReason: null };
+}
+
+async function fetchAirQualityLive(lat, lon, pastDaysParam=0){
+  let airNow = null;
+  let fallbackReason = null;
+  try{ airNow = await fetchAirNowAqi(lat, lon); }
+  catch(e){ fallbackReason = e?.message || 'AirNow unavailable.'; console.warn('AirNow AQI unavailable; falling back to Open-Meteo:', e); }
+  const fallback = await fetchOpenMeteoAqi(lat, lon, pastDaysParam);
+  return { openMeteo: fallback.openMeteo, airNow, fallbackReason };
+}
+
+function buildDataFromLive(apiData, airQualityData=null){
   const hourly = apiData.hourly; const daily = apiData.daily;
+  const aqiByTime = {};
+  const aqiSourceByTime = {};
+  try{
+    const aqHourly = airQualityData?.openMeteo?.hourly || airQualityData?.hourly;
+    if(aqHourly?.time && aqHourly?.us_aqi){
+      aqHourly.time.forEach((t, i)=>{
+        const value = aqHourly.us_aqi[i] ?? null;
+        aqiByTime[t] = value;
+        if(value != null) aqiSourceByTime[t] = 'OpenMeteo';
+      });
+    }
+  }catch{}
+  try{
+    const airNow = airQualityData?.airNow;
+    if(airNow?.observedAt && airNow.value != null){
+      const observedHour = airNow.observedHourKey || formatLocalHourKey(airNow.observedAt);
+      const match = hourly.time.find(t=>String(t).substring(0,13)===observedHour);
+      if(match){
+        aqiByTime[match] = airNow.value;
+        aqiSourceByTime[match] = 'AirNow';
+      }
+    }
+  }catch{}
   const hourlyArr = hourly.time.map((t, i) => {
     const tempF = hourly.temperature_2m[i] * 9/5 + 32;
     const apparentF = (typeof hourly.apparent_temperature !== 'undefined' && hourly.apparent_temperature[i] != null)
@@ -425,8 +551,10 @@ function buildDataFromLive(apiData){
     const windMph = hourly.wind_speed_10m[i];
     const windDir = hourly.wind_direction_10m[i];
     const precipProb = hourly.precipitation_probability ? hourly.precipitation_probability[i] : null;
+    const airQualityIndex = aqiByTime[t] ?? null;
+    const DataSource = airQualityIndex != null ? (aqiSourceByTime[t] || null) : null;
     const precipType = snowIn > 0 ? 'snow' : (rainIn > 0 ? 'rain' : 'none');
-    return { time: t, temperatureF: tempF, apparentF, precipIn, rainIn, snowIn, precipType, windMph, windDir, precipProb };
+    return { time: t, temperatureF: tempF, apparentF, precipIn, rainIn, snowIn, precipType, windMph, windDir, precipProb, airQualityIndex, DataSource };
   });
   const dailyArr = daily.time.map((d, i) => ({
     date: d,
@@ -436,7 +564,8 @@ function buildDataFromLive(apiData){
     totalSnowIn:   daily.snowfall_sum[i],
     sunrise: daily.sunrise[i], sunset: daily.sunset[i]
   }));
-  return { hourly: hourlyArr, daily: dailyArr, fetchedAt: apiData._fetchedAt || null, generationtimeMs: apiData.generationtime_ms ?? null };
+  const aqiSources = [...new Set(hourlyArr.map(h=>h.DataSource).filter(Boolean))];
+  return { hourly: hourlyArr, daily: dailyArr, fetchedAt: apiData._fetchedAt || null, generationtimeMs: apiData.generationtime_ms ?? null, aqiMeta:{ sources:aqiSources, airNow:airQualityData?.airNow||null, fallbackReason:airQualityData?.fallbackReason||null } };
 }
 
 // ---------- Utility: Snow Ratio ----------
@@ -450,6 +579,23 @@ function getSnowRatio(tempF){
   if (tempF >= 26) return 10;
   if (tempF >= 20) return 12;
   return 15;
+}
+
+function getAqiHazardColor(value){
+  const v=Number(value);
+  if(!Number.isFinite(v)) return isDark ? '#9ca3af' : '#6b7280';
+  if(v<=50) return '#22c55e';
+  if(v<=100) return '#eab308';
+  if(v<=150) return '#f97316';
+  if(v<=200) return '#ef4444';
+  if(v<=300) return '#8b5cf6';
+  return '#7f1d1d';
+}
+
+function getAqiTextColor(value){
+  const v=Number(value);
+  if(!Number.isFinite(v)) return '';
+  return v<=150 ? '#111827' : '#ffffff';
 }
 
 // ---------- Plugins ----------
@@ -758,6 +904,7 @@ function buildChart(dataset){
   const prob   = hourly.map(h=>h.precipProb ?? null);
   const wind   = hourly.map(h=>h.windMph ?? null);
   const windDir= hourly.map(h=>h.windDir ?? 0);
+  const aqi    = hourly.map(h=>h.airQualityIndex ?? null);
   const nowIdxVisible = nowIdxFull - startIdx;
   const nowPositionVisible = getCurrentTimePosition(labels);
 
@@ -794,6 +941,16 @@ function buildChart(dataset){
   const axisMinT = axisTempValues.length ? Math.min(...axisTempValues) : minT;
   const axisMaxT = axisTempValues.length ? Math.max(...axisTempValues) : maxT;
   const yMin=Math.floor(axisMinT-5); let yMax=Math.ceil(axisMaxT+5); if(axisMaxT<35) yMax=35;
+  const aqiValues = aqi.filter(v=>v!=null && Number.isFinite(Number(v))).map(Number);
+  const aqiMin = aqiValues.length ? Math.min(...aqiValues) : null;
+  const aqiMax = aqiValues.length ? Math.max(...aqiValues) : null;
+  const aqiRange = aqiMin!=null && aqiMax!=null ? Math.max(1, aqiMax - aqiMin) : 1;
+  const scaledAqi = aqi.map(v=>{
+    if(v==null || !Number.isFinite(Number(v)) || aqiMin==null || aqiMax==null) return null;
+    const chartBottom = yMin + (yMax - yMin) * 0.14;
+    const chartTop = yMax - (yMax - yMin) * 0.14;
+    return chartBottom + ((Number(v) - aqiMin) / aqiRange) * (chartTop - chartBottom);
+  });
 
   // Accumulation bar scaling in mm: snap to rounded metric ranges.
   let maxPrecip = Math.max(...precip, 0.1);
@@ -826,11 +983,12 @@ function buildChart(dataset){
       const feels = (h.apparentF!=null) ? `${h.apparentF.toFixed(1)}\u00B0F` : 'N/A';
       const precipLabel = `${(h.precipIn||0).toFixed(1)} mm`;
       const chance = h.precipProb != null ? `${h.precipProb}%` : 'N/A';
+      const aqiLabel = h.airQualityIndex != null ? `${Math.round(h.airQualityIndex)}${h.DataSource ? ` (${h.DataSource})` : ''}` : 'N/A';
       let html = `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div style="font-weight:800;font-size:1.02rem;min-width:160px">${timeLabel}</div>
         <div style="display:flex;flex-direction:column;gap:4px">
           <div style="font-size:1.25rem;font-weight:900">${tempLabel} <span style="font-size:0.9rem;font-weight:600;margin-left:8px">Feels: ${feels}</span></div>
-          <div style="font-size:0.95rem;color:${isDark? '#d1d5db':'#374151'}">Precip: ${precipLabel} · Chance: ${chance} · Wind: ${windSpd} mph @ ${windDir}\u00B0</div>
+          <div style="font-size:0.95rem;color:${isDark? '#d1d5db':'#374151'}">Precip: ${precipLabel} · Chance: ${chance} · Wind: ${windSpd} mph @ ${windDir}\u00B0 · AQI: ${aqiLabel}</div>
           <div style="font-size:0.92rem;color:${isDark? '#d1d5db':'#374151'}">Day Accum (Liquid): ${day.liquid.toFixed(1)} mm${showSnowSection? ` · Day Accum (Snow est): ${day.estSnow.toFixed(1)} mm`: ''}</div>
         </div>
       </div>`;
@@ -876,6 +1034,9 @@ function buildChart(dataset){
   // Wind speed min/max by day
   const firstMinMaxWindByDay={}; for(const [d,idxs] of Object.entries(indicesByDay)){ if(!idxs||!idxs.length) continue; let minV=Infinity, maxV=-Infinity; for(const i of idxs){ const v=wind[i]; if(v!=null && (minV===Infinity || v<minV)) minV=v; if(v!=null && (maxV===-Infinity || v>maxV)) maxV=v; } if(minV===Infinity) continue; let minIdx=null, maxIdx=null; for(const i of idxs){ const v=wind[i]; if(minIdx===null && v===minV) minIdx=i; if(maxIdx===null && v===maxV) maxIdx=i; if(minIdx!==null && maxIdx!==null) break; } firstMinMaxWindByDay[d]={minIdx,maxIdx}; }
 
+  // AQI min/max by day
+  const firstMinMaxAqiByDay={}; for(const [d,idxs] of Object.entries(indicesByDay)){ if(!idxs||!idxs.length) continue; let minV=Infinity, maxV=-Infinity; for(const i of idxs){ const v=aqi[i]; if(v!=null && (minV===Infinity || v<minV)) minV=v; if(v!=null && (maxV===-Infinity || v>maxV)) maxV=v; } if(minV===Infinity) continue; let minIdx=null, maxIdx=null; for(const i of idxs){ const v=aqi[i]; if(minIdx===null && v===minV) minIdx=i; if(maxIdx===null && v===maxV) maxIdx=i; if(minIdx!==null && maxIdx!==null) break; } firstMinMaxAqiByDay[d]={minIdx,maxIdx}; }
+
   const annotations={};
   // Day/Night shading and sunrise/sunset lines
   try{ if (dataset.daily && dataset.daily.length>0 && typeof addDayNightBoxesAligned==='function'){ addDayNightBoxesAligned(labels, dataset.daily, annotations, yMin, yMax, SHOW_SUNRISE_SUNSET); } }catch{}
@@ -918,6 +1079,12 @@ function buildChart(dataset){
   // Add wind speed line if in line mode (uses same scale as precipitation)
   if(WIND_DISPLAY_MODE === 'line'){
     baseDatasets.push({ type:'line', label:'Wind Speed', data:scaledWind, yAxisID:'yAccum', borderColor:'#22d3ee', backgroundColor:'rgba(34,211,238,0.15)', tension:0.3, pointRadius:1, pointHoverRadius:2, hidden:false, borderDash:[4,3], order: 4 });
+  }
+
+  if(AIR_QUALITY_INDEX_ENABLED && aqiValues.length){
+    baseDatasets.push({ type:'line', label:'Air Quality Index', data:scaledAqi, yAxisID:'yTemp', borderColor:(c)=>getAqiHazardColor(aqi[c.dataIndex]), segment:{ borderColor:(c)=>getAqiHazardColor(aqi[c.p1DataIndex] ?? aqi[c.p0DataIndex]) }, backgroundColor:'rgba(107,114,128,0.12)', tension:0.3, pointRadius:0, pointHoverRadius:3, hidden:false, borderWidth:2.5, order: 5,
+      datalabels:{ display:(c)=>{ const i=c.dataIndex; const d=labelDates[i]; const fm=firstMinMaxAqiByDay[d]; if(!fm) return false; return i===fm.minIdx || i===fm.maxIdx; }, formatter:(v,c)=>{ const raw=aqi[c.dataIndex]; return raw==null ? '' : `${Math.round(raw)} AQI`; }, align:(c)=>{ const i=c.dataIndex; const fm=firstMinMaxAqiByDay[labelDates[i]]; return (!fm)?'top':(i===fm.minIdx?'bottom':'top'); }, offset:4, color:(c)=>getAqiHazardColor(aqi[c.dataIndex]), backgroundColor:isDark?'rgba(17,24,39,0.72)':'rgba(249,250,251,0.78)', borderRadius:3, padding:{top:1,bottom:1,left:3,right:3}, clamp:true }
+    });
   }
 
   chart = new Chart(ctx, {
@@ -997,6 +1164,8 @@ function buildChart(dataset){
                   : "Feels Like: N/A";
               if (ctx.dataset.yAxisID === "yProb")
                 return `Chance: ${h.precipProb ?? "N/A"}%`;
+              if (ctx.dataset.label === "Air Quality Index")
+                return h.airQualityIndex != null ? `AQI: ${Math.round(h.airQualityIndex)}` : "AQI: N/A";
               if (
                 ctx.dataset.yAxisID === "yAccum" &&
                 ctx.dataset.label === "Accumulation"
@@ -1156,6 +1325,7 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTheme"> Dark Theme</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mApparent"> Feels Like Line</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mWindLine"> Wind Speed Line</label>
+  <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mAirQualityIndex"> Air Quality Index</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
   <button id="mSaveUISettings" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save Visible Range</button>
@@ -1181,12 +1351,13 @@ function ensureAppMenu(){
 
   document.getElementById('btnContainer').appendChild(btn); document.body.appendChild(panel);
 
-  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mWindLine=$("mWindLine"), mHeight=$("mChartHeight"), mData=$("mData"), mCheck=$("mCheck");
+  const mTheme=$("mTheme"), mApp=$("mApparent"), mTest=$("mTest"), mLay=$("mLayout"), mWindLine=$("mWindLine"), mAqi=$("mAirQualityIndex"), mHeight=$("mChartHeight"), mData=$("mData"), mCheck=$("mCheck");
   if(mTheme){ mTheme.checked = isDark; mTheme.addEventListener('change', ()=>{ toggleTheme(); mTheme.checked=isDark; /* keep menu open */ }); }
   if(mApp){ mApp.checked = APPARENT_OVERLAY_ENABLED; mApp.addEventListener('change', ()=>{ toggleApparent(); mApp.checked=APPARENT_OVERLAY_ENABLED; /* keep menu open */ }); }
   if(mTest){ mTest.checked = TEST_MODE_ENABLED; mTest.addEventListener('change', ()=>{ toggleTestMode(); mTest.checked=TEST_MODE_ENABLED; /* keep menu open */ }); }
   if(mLay){ mLay.checked = (LAYOUT_MODE==='scroll'); mLay.addEventListener('change', ()=>{ toggleLayout(); updateScrollScaleVisibility(); mLay.checked=(LAYOUT_MODE==='scroll'); /* keep menu open */ }); }
   if(mWindLine){ mWindLine.checked = WIND_SPEED_LINE_ENABLED; mWindLine.addEventListener('change', ()=>{ toggleWindSpeedLine(); mWindLine.checked=WIND_SPEED_LINE_ENABLED; /* keep menu open */ }); }
+  if(mAqi){ mAqi.checked = AIR_QUALITY_INDEX_ENABLED; mAqi.addEventListener('change', ()=>{ toggleAirQualityIndex(); mAqi.checked=AIR_QUALITY_INDEX_ENABLED; /* keep menu open */ }); }
   if(mHeight){ updateChartHeightButtonLabel(); mHeight.addEventListener('click', ()=>{ toggleChartHeight(); /* keep menu open */ }); }
   syncGpsDefaultCheckbox();
   $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
@@ -1393,6 +1564,17 @@ function centerWeatherDataColumn(table, col){
   wrap.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
 }
 function cleanClipboardCell(value){ return String(value ?? '').replace(/[\r\n]+/g, ' '); }
+function getAqiSourceFootnote(dataset){
+  const sources = dataset?.aqiMeta?.sources || [];
+  if(sources.includes('AirNow') && sources.includes('OpenMeteo')) return 'AQI source: AirNow for current observed hour; OpenMeteo for forecast/model hours.';
+  if(sources.includes('AirNow')) return 'AQI source: AirNow.';
+  if(sources.includes('OpenMeteo')){
+    return dataset?.aqiMeta?.fallbackReason
+      ? 'AQI source: OpenMeteo. AirNow unavailable or stale.'
+      : 'AQI source: OpenMeteo.';
+  }
+  return 'AQI source: No AQI data available for this forecast.';
+}
 
 function showWeatherData(){
   allowNaturalOrientation();
@@ -1404,6 +1586,7 @@ function showWeatherData(){
     { label:'Temp (\u00B0F)', html:h=>h.temperatureF!=null? h.temperatureF.toFixed(1):'N/A', copy:h=>h.temperatureF!=null? h.temperatureF.toFixed(1):'N/A', bg:h=>h.temperatureF!=null?TempColorBarPlugin.colorAtTemp(h.temperatureF):'', color:h=>h.temperatureF!=null?'#111827':'' },
     { label:'Feels Like (\u00B0F)', html:h=>h.apparentF!=null? h.apparentF.toFixed(1):'N/A', copy:h=>h.apparentF!=null? h.apparentF.toFixed(1):'N/A' },
     { label:'Chance (%)', html:h=>h.precipProb!=null? h.precipProb:'N/A', copy:h=>h.precipProb!=null? h.precipProb:'N/A' },
+    { label:'AQI', html:h=>h.airQualityIndex!=null? Math.round(h.airQualityIndex):'N/A', copy:h=>h.airQualityIndex!=null? Math.round(h.airQualityIndex):'N/A', bg:h=>h.airQualityIndex!=null?getAqiHazardColor(h.airQualityIndex):'', color:h=>getAqiTextColor(h.airQualityIndex) },
     { label:'Precip (mm)', html:h=>h.precipIn!=null? h.precipIn.toFixed(1):'0.0', copy:h=>h.precipIn!=null? h.precipIn.toFixed(1):'0.0' },
     { label:'Rain (mm)', html:h=>h.rainIn!=null? h.rainIn.toFixed(1):'0.0', copy:h=>h.rainIn!=null? h.rainIn.toFixed(1):'0.0' },
     { label:'Snow (mm)', html:h=>h.snowIn!=null? h.snowIn.toFixed(1):'0.0', copy:h=>h.snowIn!=null? h.snowIn.toFixed(1):'0.0' },
@@ -1412,7 +1595,7 @@ function showWeatherData(){
     { label:'Wind Dir', html:h=>formatWindArrow(h.windDir, h.windMph).html, copy:h=>formatWindArrow(h.windDir, h.windMph).text, align:'center' }
   ];
   // Add Copy button
-  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button id="copyWeatherDataBtn" style="padding:4px 12px;border-radius:5px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;font-size:13px;">Copy Table</button></div>';
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap"><div style="font-size:12px;opacity:0.82">${escapeHtml(getAqiSourceFootnote(ds))}</div><button id="copyWeatherDataBtn" style="padding:4px 12px;border-radius:5px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer;font-size:13px;">Copy Table</button></div>`;
   html += '<table id="weatherDataTable" style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif">';
   // Header row
   html += '<tr><th data-base-bg="#111827" data-base-color="#e5e7eb" style="position:sticky;left:0;background:#111827;color:#e5e7eb;padding:6px 8px;border:1px solid #374151">Metric</th>';
@@ -1744,6 +1927,7 @@ function setupRangeButtonLongPress(){
 // ---------- Other UI wiring ----------
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleWindSpeedLine(){ WIND_SPEED_LINE_ENABLED=!WIND_SPEED_LINE_ENABLED; localStorage.setItem(WIND_SPEED_LINE_STORAGE_KEY, JSON.stringify(WIND_SPEED_LINE_ENABLED)); WIND_DISPLAY_MODE=WIND_SPEED_LINE_ENABLED?'line':'off'; if(currentDataset) buildChart(currentDataset); }
+async function toggleAirQualityIndex(){ AIR_QUALITY_INDEX_ENABLED=!AIR_QUALITY_INDEX_ENABLED; localStorage.setItem(AIR_QUALITY_INDEX_STORAGE_KEY, JSON.stringify(AIR_QUALITY_INDEX_ENABLED)); if(!currentDataset) return; if(AIR_QUALITY_INDEX_ENABLED && currentLocationLat!=null && currentLocationLon!=null && !currentDataset.hourly?.some(h=>h.airQualityIndex!=null) && !TEST_MODE_ENABLED){ try{ const data=await loadWeatherData(currentCityName || $('cityTitle')?.textContent || 'Current Location', currentLocationLat, currentLocationLon, pastDays); currentDataset=data; buildChart(data); return; }catch(e){ console.warn('Failed to reload AQI data:', e); alert('Air Quality Index was enabled, but AQI data could not be loaded right now.'); } } buildChart(currentDataset); }
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const fallback=readSavedLocations()[0] || normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']}); const name=currentCityName||fallback.name; const coords=(currentLocationLat!=null&&currentLocationLon!=null)?{lat:currentLocationLat,lon:currentLocationLon}:fallback; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
   pastDays = 0;
@@ -1801,6 +1985,34 @@ function openChartCompare(){
     console.error(e);
     alert('Unable to open Chart Compare. The forecast dataset could not be saved in this browser session.');
   }
+}
+
+function lonToWebMercatorX(lon){
+  return Number(lon) * 20037508.34 / 180;
+}
+function latToWebMercatorY(lat){
+  const clamped = Math.max(-85.05112878, Math.min(85.05112878, Number(lat)));
+  return Math.log(Math.tan((90 + clamped) * Math.PI / 360)) / (Math.PI / 180) * 20037508.34 / 180;
+}
+function buildAirNowMapUrl(lat, lon){
+  const x = lonToWebMercatorX(lon);
+  const y = latToWebMercatorY(lat);
+  const buffer = 80000;
+  const params = new URLSearchParams({
+    showgreencontours: 'false',
+    xmin: String(x - buffer),
+    xmax: String(x + buffer),
+    ymin: String(y - buffer),
+    ymax: String(y + buffer)
+  });
+  return `https://gispub.epa.gov/airnow/?${params.toString()}`;
+}
+function openAirNowMap(){
+  if(currentLocationLat == null || currentLocationLon == null){
+    alert('Please select a location first.');
+    return;
+  }
+  window.open(buildAirNowMapUrl(currentLocationLat, currentLocationLon), '_blank', 'noopener,noreferrer');
 }
 async function loadCityByName(cityName, coords){ try{ lastClickedIndex=null; lastClickedTime=null; const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs ? qs.value : null; if(!id) return; const loc=findSavedLocationById(id); if(!loc) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(loc.name, loc); if(qs) qs.value=''; }
@@ -2049,7 +2261,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.60`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.61`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2070,6 +2282,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
   $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
+  $("airNowBtn")?.addEventListener("click", openAirNowMap);
 
   try{
     await loadInitialLocation();
@@ -2180,6 +2393,8 @@ function showAboutDialog(){
           <li style="margin:6px 0;"><a href="https://nominatim.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Nominatim Reverse Geocoding</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Geolocation</a></li>
           <li style="margin:6px 0;"><a href="https://open-meteo.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Forecast</a></li>
+          <li style="margin:6px 0;"><a href="https://docs.airnowapi.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">AirNow AQI Observations</a></li>
+          <li style="margin:6px 0;"><a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" style="color:#3b82f6; text-decoration:none;">Open-Meteo Air Quality</a></li>
           <li style="margin:6px 0;"><a href="https://www.chartjs.org/" target="_blank" style="color:#3b82f6; text-decoration:none;">Chart.js v4.4.1</a></li>
           <li style="margin:6px 0;"><a href="https://radar.weather.gov/" target="_blank" style="color:#3b82f6; text-decoration:none;">NOAA Weather Radar</a></li>
         </ul>
@@ -2361,6 +2576,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

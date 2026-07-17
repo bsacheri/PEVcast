@@ -1,5 +1,5 @@
 
-/* styles.css @version 7.12.29 */
+/* styles.css @version 7.12.30 */
 :root {
   --bg-dark: #111827; --bg-light: #f9fafb; --fg-dark: #e5e7eb; --fg-light: #111827;
   --accent: #10b981; --accent-soft: rgba(16, 185, 129, 0.15); --border-subtle: #374151;
@@ -32,7 +32,9 @@ body.light .coords-popup { background:rgba(243,244,246,0.97); color:#111827; bor
 #statusLine .summary-value { font-weight:700; font-size:1.02rem; line-height:1.1; }
 .summary-right { margin-left:auto; text-align:right; min-width:240px; }
 .summary-suntimes { font-size:0.9rem; opacity:0.9; }
-.chart-container { --sticky-left-axis-width:150px; --sticky-right-axis-width:34px; position:relative; height:420px; margin-bottom:0.75rem; max-width:100%; padding-left:var(--sticky-left-axis-width); padding-right:var(--sticky-right-axis-width); }
+.chart-capture-frame { width:100%; max-width:100%; margin:0 0 0.75rem 0; padding:0.45rem 0.45rem 0.35rem; border:1px solid rgba(148,163,184,0.45); border-radius:8px; background:rgba(31,41,55,0.26); overflow:hidden; }
+body.light .chart-capture-frame { background:rgba(255,255,255,0.78); border-color:rgba(17,24,39,0.18); }
+.chart-container { --sticky-left-axis-width:150px; --sticky-right-axis-width:34px; position:relative; height:420px; margin-bottom:0; max-width:100%; padding-left:var(--sticky-left-axis-width); padding-right:var(--sticky-right-axis-width); }
 .chart-scroll { width:100%; height:100%; overflow-x:auto; overflow-y:hidden; }
 .sticky-y-axis { position:absolute; top:0; bottom:0; pointer-events:none; z-index:3; }
 .sticky-y-axis-left { left:0; width:var(--sticky-left-axis-width); }
@@ -97,6 +99,7 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
   #cityInput{width:100%; min-width:0; height:34px;}
   #searchBtn{height:34px; white-space:nowrap;}
   #radarBtn{width:34px !important; height:34px !important; min-width:34px; margin-left:0 !important; padding:0 !important;}
+  .chart-capture-frame{padding:0.35rem 0.3rem 0.25rem;}
   .chart-container{height:300px;}
   .summary-right{min-width:auto; font-size:0.8rem;}
   .summary-box { flex-direction:column; align-items:flex-start; gap:0.5rem; padding:0.4rem;}
@@ -140,7 +143,8 @@ body.light input, body.light select { background:#fff; border-color:#d1d5db; }
 
 
 .compare-action { display:flex; justify-content:center; gap:0.5rem; padding:0 0 0.75rem; flex-wrap:wrap; }
-#chartCompareBtn, #skyDiffBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
+#chartCompareBtn, #skyDiffBtn, #airNowBtn { min-height:36px; padding:0.45rem 0.85rem; font-size:0.9rem; font-weight:600; }
+
 
 
 
