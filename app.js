@@ -1,4 +1,4 @@
-// app.js @version 7.12.61
+// app.js @version 7.12.62
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.61'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/17/2026 2:20 AM';
+(function(){ try{ window.APP_VERSION='7.12.62'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/22/2026 5:06 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -38,6 +38,7 @@ const MOBILE_TOOLTIP_HIDE_DELAY_MS = 1500;
 let snowRatioMode = 'Auto'; // 'Auto' | '8' | '10' | '12' | '15'
 let LAYOUT_MODE = 'fit';    // 'fit' | 'scroll'
 let LAYOUT_SCROLL_SCALE = 1.0; // Width scale multiplier for scroll mode (0.1 - 1.2)
+let SELECTED_VISIBLE_HOURS = null; // User-selected visible-hours stop; preserved across layout recalculation
 let lastClickedIndex = null; // Last clicked chart data index for scroll-centering
 let lastClickedTime = null; // Last clicked chart time for Weather Data column selection
 let mobileTooltipTimer = null;
@@ -852,19 +853,24 @@ function scheduleMobileTooltipHide(chartInstance){
 function applyLayout(labels){ const container=document.querySelector('.chart-container'); const scroller=$("chartScroll"); const canvas=$("weatherChart"); applyChartContainerHeight(); const leftAxisWidth=getGradientWidth(); const rightAxisWidth=34; container.style.setProperty('--sticky-left-axis-width', `${leftAxisWidth}px`); container.style.setProperty('--sticky-right-axis-width', `${rightAxisWidth}px`); canvas.style.height='100%'; const hours=labels.length, pxPerHour=56; const fitScale=parseFloat(Math.min(1.0, Math.max(0.0, scroller.clientWidth/(Math.max(hours,1)*pxPerHour))).toFixed(4)); const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); const { maxHours } = getVisibleHoursBounds(hours); const visibleHourStops = getVisibleHoursStops(hours); const fitVisibleHours = snapVisibleHours(getVisibleHoursForScale(fitScale, scroller.clientWidth, pxPerHour), hours); if(slider){ slider.min='0'; slider.max=String(Math.max(0, visibleHourStops.length-1)); slider.step='1'; slider.dataset.visibleHoursTotal=String(hours); renderVisibleHoursTicks(hours); }
   if(LAYOUT_MODE==='fit'){
     LAYOUT_SCROLL_SCALE=fitScale;
+    SELECTED_VISIBLE_HOURS=maxHours;
     setVisibleHoursSliderValue(slider, fitVisibleHours, hours);
     updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
     scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
   } else {
-    const currentVisibleHours = snapVisibleHours(getVisibleHoursForScale(LAYOUT_SCROLL_SCALE, scroller.clientWidth, pxPerHour), hours);
+    const currentVisibleHours = SELECTED_VISIBLE_HOURS == null
+      ? snapVisibleHours(getVisibleHoursForScale(LAYOUT_SCROLL_SCALE, scroller.clientWidth, pxPerHour), hours)
+      : snapVisibleHours(SELECTED_VISIBLE_HOURS, hours);
     const atFit = currentVisibleHours >= maxHours;
     if(atFit){
       LAYOUT_SCROLL_SCALE=fitScale;
+      SELECTED_VISIBLE_HOURS=maxHours;
       setVisibleHoursSliderValue(slider, fitVisibleHours, hours);
       updateVisibleHoursDisplay(valueSpan, fitVisibleHours, maxHours);
       scroller.style.overflowX='hidden'; canvas.style.width=''; canvas.removeAttribute('width');
     } else {
       const clampedVisibleHours = snapVisibleHours(currentVisibleHours, hours);
+      SELECTED_VISIBLE_HOURS=clampedVisibleHours;
       const targetScale = Math.max(fitScale, getScaleForVisibleHours(clampedVisibleHours, scroller.clientWidth, pxPerHour));
       LAYOUT_SCROLL_SCALE=targetScale;
       const w=Math.max(scroller.clientWidth, hours*pxPerHour*LAYOUT_SCROLL_SCALE);
@@ -919,6 +925,7 @@ function buildChart(dataset){
       if(slider){
         slider.value = String(stopIndex);
         const desired = getVisibleHoursFromStopIndex(stopIndex, total);
+        SELECTED_VISIBLE_HOURS = desired;
         updateVisibleHoursDisplay($('mainScrollScaleValue'), desired, getVisibleHoursBounds(total).maxHours);
         const scroller = document.getElementById('chartScroll');
         if(scroller){
@@ -1949,7 +1956,7 @@ function toggleChartHeight(){
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; localStorage.setItem(FEELS_LIKE_LINE_STORAGE_KEY, JSON.stringify(APPARENT_OVERLAY_ENABLED)); if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
 function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnimationFrame(()=>{ const scroller=$('chartScroll'); if(!chart||!scroller) return; const px=chart.scales?.x?.getPixelForValue(lastClickedIndex); if(px==null||isNaN(px)) return; scroller.scrollLeft=px-scroller.clientWidth/2; }); }
-function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const totalVisibleHours=parseInt(slider.dataset.visibleHoursTotal || '', 10) || chart?.data?.labels?.length || parseInt(slider.max, 10) || 24; const maxVisibleHours=getVisibleHoursBounds(totalVisibleHours).maxHours; const desiredVisibleHours=getVisibleHoursFromStopIndex(parseFloat(slider.value), totalVisibleHours); setVisibleHoursSliderValue(slider, desiredVisibleHours, totalVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
+function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const totalVisibleHours=parseInt(slider.dataset.visibleHoursTotal || '', 10) || chart?.data?.labels?.length || parseInt(slider.max, 10) || 24; const maxVisibleHours=getVisibleHoursBounds(totalVisibleHours).maxHours; const desiredVisibleHours=getVisibleHoursFromStopIndex(parseFloat(slider.value), totalVisibleHours); SELECTED_VISIBLE_HOURS=desiredVisibleHours; setVisibleHoursSliderValue(slider, desiredVisibleHours, totalVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
     const scroller=$('chartScroll'); const pxPerHour=56;
     if(scroller){ LAYOUT_SCROLL_SCALE=getScaleForVisibleHours(desiredVisibleHours, scroller.clientWidth, pxPerHour); }
     if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
@@ -2261,7 +2268,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.61`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.62`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2576,6 +2583,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

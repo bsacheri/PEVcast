@@ -2,32 +2,10 @@
 
 ---
 
-## 7.12.61 - 2026-07-17
-
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+## 7.12.62 - 2026-07-22
 
 ### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
-
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
-### Versioning
-- Updated version automation, release notes, or cache-version syncing.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
+- Preserved the selected Visible Hours slider position when the page is resized or the chart layout is recalculated.
 
 ---
 
@@ -448,6 +426,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
