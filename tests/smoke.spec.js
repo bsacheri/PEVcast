@@ -133,6 +133,26 @@ test('visible-hours scrolling keeps both y axes visible', async ({ page }) => {
   expect(after).toEqual(before);
 });
 
+test('visible-hours selection survives a viewport resize', async ({ page }) => {
+  await page.goto('/index.html');
+  const slider = page.locator('#mainScrollScale');
+  await expect(slider).toBeVisible();
+  await expect.poll(async () => slider.evaluate((element) => Number(element.dataset.visibleHoursTotal) > 0)).toBe(true);
+
+  await slider.evaluate((element) => {
+    element.value = element.min;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const selectedStop = await slider.inputValue();
+  const selectedLabel = await page.locator('#mainScrollScaleValue').textContent();
+
+  await page.setViewportSize({ width: 960, height: 760 });
+
+  await expect(slider).toHaveValue(selectedStop);
+  await expect(page.locator('#mainScrollScaleValue')).toHaveText(selectedLabel || '');
+  await expect.poll(async () => page.locator('#chartScroll').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+});
+
 test('GPS resolving overlay can be canceled back to the last location', async ({ page }) => {
   await page.goto('/index.html');
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');

@@ -2,10 +2,41 @@
 
 ---
 
+## 7.12.70 - 2026-07-31
+
+### Sharing
+- Added a Share button to the About dialog using the Web Share API (with a clipboard-copy fallback) to share the app link, captioned "Try PEVcast".
+- Simplified the Share button to an icon-only share-network glyph and moved it into a small square icon in the top-right corner of the About dialog.
+
+### Analytics
+- Added GoatCounter privacy-friendly, cookie-less analytics tracking to `index.html` and `chart-compare.html`.
+- Added a short privacy disclosure line in the About dialog noting anonymous usage analytics with no cookies or personal data.
+
+### Chart
+- Added a `Save Snapshot` button that composites the current chart view and city title into a PNG, sharing it via the mobile share sheet when available or downloading it directly otherwise.
+- Corrected resize handling to retain the selected Visible Hours range using the chart's displayed labels.
+- Preserved the chart canvas width in Scroll layout when the browser window changes size, so the selected Visible Hours range stays zoomed.
+
+### Menu and Dialogs
+- Removed the `Save Visible Range` button from the app menu.
+- The Visible Hours slider and day-range toggle now auto-save silently whenever they change, and that saved state is restored automatically on reload.
+
+### Check for Updates
+- The update check now forces the service worker to look for a fresh version immediately instead of waiting on the browser's own update schedule.
+- The update check now compares the HTML, CSS, and JS version numbers instead of only the JS version, so partial deploys aren't missed.
+- The "up to date" message and the update banner now show the actual version number, so stale deployments are easier to spot.
+- The version.json fetch now bypasses the HTTP cache for a more reliable check.
+
+### Versioning
+- Refreshed the service-worker cache version so the corrected scripts are delivered.
+- Bumped published app, cache, and version metadata through `7.12.70`.
+
+---
+
 ## 7.12.62 - 2026-07-22
 
 ### Chart
-- Preserved the selected Visible Hours slider position when the page is resized or the chart layout is recalculated.
+- Preserved the selected Visible Hours slider position when the page is resized or the chart layout is recalculated, using the chart's displayed range rather than the full forecast data.
 
 ---
 
@@ -426,6 +457,14 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
+
+
+
+
+
+
+
 
 
 

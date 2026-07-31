@@ -1,4 +1,4 @@
-// app.js @version 7.12.62
+// app.js @version 7.12.70
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.62'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/22/2026 5:06 PM';
+(function(){ try{ window.APP_VERSION='7.12.70'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '07/31/2026 4:38 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -244,9 +244,6 @@ function saveVisibleRangeAsDefault(){
   }
   const settings = { rangeIndex: rangeIndex, visibleStopIndex: Number.isFinite(stopIndex)?stopIndex:null, savedAt: new Date().toISOString() };
   writeDefaultUISettings(settings);
-  const total = chart?.data?.labels?.length || 24;
-  const visHours = Number.isFinite(settings.visibleStopIndex) ? getVisibleHoursFromStopIndex(settings.visibleStopIndex, total) : getVisibleHoursFromStopIndex(0,total);
-  alert(`Saved defaults: Range=${RANGE_STATES[settings.rangeIndex]} , Visible=${formatVisibleHoursLabel(visHours, total)}`);
 }
 function applyDefaultUISettings(){
   const settings = readDefaultUISettings();
@@ -877,8 +874,21 @@ function applyLayout(labels){ const container=document.querySelector('.chart-con
       scroller.style.overflowX=(w<=scroller.clientWidth+1)?'hidden':'auto'; canvas.style.width=w+'px'; canvas.setAttribute('width', w);
       setVisibleHoursSliderValue(slider, clampedVisibleHours, hours);
       updateVisibleHoursDisplay(valueSpan, clampedVisibleHours, maxHours);
-    }
+  }
   } }
+
+function resizeChartForCurrentLayout(){
+  if(!chart) return;
+  if(LAYOUT_MODE!=='scroll'){
+    chart.resize();
+    return;
+  }
+  const canvas=$("weatherChart");
+  const scroller=$("chartScroll");
+  const width=Math.round(parseFloat(canvas?.style?.width) || canvas?.clientWidth || scroller?.clientWidth || 1);
+  const height=Math.round(canvas?.clientHeight || scroller?.clientHeight || 1);
+  chart.resize(width, height);
+}
 
 // ---------- Build Chart ----------
 function buildChart(dataset){
@@ -1335,7 +1345,6 @@ function ensureAppMenu(){
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mAirQualityIndex"> Air Quality Index</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mTest"> Test Mode</label>
   <label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="mLayout"> Layout: Scroll</label>
-  <button id="mSaveUISettings" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Save Visible Range</button>
   <button id="mChartHeight" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Chart Height: Tall</button>
   <div id="mLocationsSection" style="margin:8px 0;border-top:1px solid rgba(107,114,128,0.35);border-bottom:1px solid rgba(107,114,128,0.35);padding:8px 0">
     <div style="font-weight:700;user-select:none">Locations</div>
@@ -1370,7 +1379,6 @@ function ensureAppMenu(){
   $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
   $("mGpsDefault")?.addEventListener('change', (e)=>{ saveGpsDefault(!!e.target.checked); /* keep menu open */ });
   $("mSaveQuickLocation")?.addEventListener('click', ()=>{ saveCurrentLocationToQuickList(); /* keep menu open */ });
-  $("mSaveUISettings")?.addEventListener('click', ()=>{ saveVisibleRangeAsDefault(); /* keep menu open */ });
   $("mEditQuickLocations")?.addEventListener('click', ()=>{ showQuickListEditor(); /* keep menu open */ });
   if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
   if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
@@ -1939,7 +1947,8 @@ function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("tes
 function toggleRange(){
   pastDays = 0;
   LAYOUT_MODE = 'fit'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=false;
-  rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} } 
+  rangeIndex=(rangeIndex+1)%RANGE_STATES.length; if(currentDataset){ try{ updateRangeButtonLabel(); buildChart(currentDataset); }catch{ buildChart(currentDataset);} }
+  saveVisibleRangeAsDefault(); // auto-persist range on every change
 }
 function toggleLayout(){ LAYOUT_MODE = (LAYOUT_MODE==='fit')?'scroll':'fit'; updateLayoutButtonLabel(); if(currentDataset) buildChart(currentDataset); }
 function updateLayoutButtonLabel(){ const btn = $('layoutToggle'); if(btn) btn.textContent = (LAYOUT_MODE==='scroll') ? 'Layout: Scroll' : 'Layout: Fit'; }
@@ -1951,7 +1960,7 @@ function toggleChartHeight(){
   updateChartHeightButtonLabel();
   applyChartContainerHeight();
   if(currentDataset) buildChart(currentDataset);
-  else if(chart?.data?.labels){ applyLayout(chart.data.labels); chart.resize(); StickyYAxisOverlay.render(chart); }
+  else if(chart?.data?.labels){ applyLayout(chart.data.labels); resizeChartForCurrentLayout(); StickyYAxisOverlay.render(chart); }
 }
 function toggleApparent(){ APPARENT_OVERLAY_ENABLED = !APPARENT_OVERLAY_ENABLED; localStorage.setItem(FEELS_LIKE_LINE_STORAGE_KEY, JSON.stringify(APPARENT_OVERLAY_ENABLED)); if(currentDataset) buildChart(currentDataset); }
 function updateScrollScaleVisibility(){ }
@@ -1959,7 +1968,9 @@ function scrollToClickedPoint(){ if(lastClickedIndex==null) return; requestAnima
 function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const valueSpan=$("mainScrollScaleValue"); if(!slider) return; if(valueSpan && !valueSpan.textContent) valueSpan.textContent='24h'; slider.addEventListener('input', ()=>{ const totalVisibleHours=parseInt(slider.dataset.visibleHoursTotal || '', 10) || chart?.data?.labels?.length || parseInt(slider.max, 10) || 24; const maxVisibleHours=getVisibleHoursBounds(totalVisibleHours).maxHours; const desiredVisibleHours=getVisibleHoursFromStopIndex(parseFloat(slider.value), totalVisibleHours); SELECTED_VISIBLE_HOURS=desiredVisibleHours; setVisibleHoursSliderValue(slider, desiredVisibleHours, totalVisibleHours); updateVisibleHoursDisplay(valueSpan, desiredVisibleHours, maxVisibleHours); const wantsFit=desiredVisibleHours >= maxVisibleHours; if(wantsFit){ LAYOUT_MODE='fit'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=false; } else if(LAYOUT_MODE==='fit'){ LAYOUT_MODE='scroll'; updateLayoutButtonLabel(); const mLay=$("mLayout"); if(mLay) mLay.checked=true; }
     const scroller=$('chartScroll'); const pxPerHour=56;
     if(scroller){ LAYOUT_SCROLL_SCALE=getScaleForVisibleHours(desiredVisibleHours, scroller.clientWidth, pxPerHour); }
-    if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); } }); updateScrollScaleVisibility(); }
+    if(currentDataset){ buildChart(currentDataset); scrollToClickedPoint(); }
+    saveVisibleRangeAsDefault(); // auto-persist visible range on every change
+  }); updateScrollScaleVisibility(); }
 
 function openChartCompare(){
   if(!currentDataset || !Array.isArray(currentDataset.hourly) || currentDataset.hourly.length === 0){
@@ -2042,7 +2053,7 @@ function ensureButtonContainer(){ if(document.getElementById('btnContainer')) re
 
 function ensureRangeButton(){ const btn=$("rangeToggle"); if(!btn || btn.parentElement?.id==='btnContainer') return; ensureButtonContainer(); const container=document.getElementById('btnContainer'); Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)',fontSize:'0.85rem'}); container.appendChild(btn); }
 
-function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; const refresh=()=>{ try{ chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart); }catch{} }; refresh(); requestAnimationFrame(refresh); }); document.getElementById('btnContainer').appendChild(b); }
+function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; const refresh=()=>{ try{ if(chart?.data?.labels) applyLayout(chart.data.labels); resizeChartForCurrentLayout(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart); }catch{} }; refresh(); requestAnimationFrame(refresh); }); document.getElementById('btnContainer').appendChild(b); }
 
 
 
@@ -2155,27 +2166,33 @@ function updateVersionChip(){
 // ======= Update Checking =======
 let latestVersionData = null;
 let updateAvailable = false;
+let swRegistration = null;
 
 async function checkForUpdates(){
   try {
     console.log('[Update] Checking for updates...');
-    const response = await fetch('./version.json?cache_bust=' + Date.now());
+    // Force the browser to re-fetch sw.js immediately instead of waiting for its own update schedule
+    if (swRegistration) {
+      try{ await swRegistration.update(); }catch(e){ console.warn('[Update] Service worker update check failed:', e); }
+    }
+    const response = await fetch('./version.json?cache_bust=' + Date.now(), { cache: 'no-store' });
     if (!response.ok) throw new Error('Failed to fetch version info');
     
     latestVersionData = await response.json();
-    const currentVersion = window.FILE_VERSIONS?.js || 'unknown';
-    const latestVersion = latestVersionData.js;
+    const current = window.FILE_VERSIONS || {};
+    const latest = latestVersionData;
+    const isNewer = ['html', 'css', 'js'].some(key => latest[key] && latest[key] !== current[key]);
     
-    console.log(`[Update] Current: ${currentVersion}, Latest: ${latestVersion}`);
+    console.log(`[Update] Current: ${JSON.stringify(current)}, Latest: ${JSON.stringify(latest)}`);
     
-    if (latestVersion && latestVersion !== currentVersion) {
+    if (isNewer) {
       updateAvailable = true;
       showUpdateBanner();
       console.log('[Update] Update available!');
       return true;
     } else {
       console.log('[Update] Already on latest version');
-      alert('PEVcast is already up to date!');
+      alert(`PEVcast is already up to date (v${current.js || '?.?.?'}).`);
       return false;
     }
   } catch (e) {
@@ -2189,6 +2206,8 @@ function showUpdateBanner(){
   const banner = $("updateBanner");
   if (banner) {
     banner.classList.remove('hidden');
+    const span = banner.querySelector('span');
+    if (span && latestVersionData?.js) span.textContent = `A new version of PEVcast is available (v${latestVersionData.js}).`;
     console.log('[Update] Showing update banner');
   }
 }
@@ -2260,6 +2279,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then(registration => {
         console.log('[PWA] Service worker registered:', registration);
+        swRegistration = registration;
       })
       .catch(error => {
         console.warn('[PWA] Service worker registration failed:', error);
@@ -2268,7 +2288,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.62`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.70`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2290,12 +2310,16 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
   $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
   $("airNowBtn")?.addEventListener("click", openAirNowMap);
+  $("snapshotBtn")?.addEventListener("click", async ()=>{
+    try{ await saveChartSnapshot(); }
+    catch(err){ console.error(err); alert(err?.message || 'Unable to save chart snapshot.'); }
+  });
 
   try{
     await loadInitialLocation();
   }catch(e){ console.error(e); alert(e?.message||'Failed to load initial data.'); }
 
-  window.addEventListener('resize', ()=>{ if(currentDataset){ try{ applyLayout(currentDataset.hourly.map(h=>h.time)); chart?.resize(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart);}catch{} } });
+  window.addEventListener('resize', ()=>{ if(chart?.data?.labels?.length){ try{ applyLayout(chart.data.labels); resizeChartForCurrentLayout(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart);}catch{} } });
 });
 
 // ======= About Dialog =======
@@ -2379,6 +2403,79 @@ async function showRevisionLogDialog(){
 function allowNaturalOrientation(){
   try{ screen.orientation?.unlock?.(); }catch{}
 }
+async function sharePEVcastLink(){
+  const shareUrl = new URL(window.location.href);
+  const shareData = {
+    title: 'PEVcast',
+    text: 'Try PEVcast',
+    url: shareUrl.href
+  };
+  if(navigator.share){
+    await navigator.share(shareData);
+    return;
+  }
+  if(navigator.clipboard?.writeText){
+    await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
+    alert('PEVcast link copied to clipboard.');
+    return;
+  }
+  alert(`${shareData.text}\n${shareData.url}`);
+}
+function getChartSnapshotFilename(){
+  const city = (currentCityName || $('cityTitle')?.textContent || 'forecast').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  return `PEVcast-${city || 'forecast'}-${stamp}.png`;
+}
+async function buildChartSnapshotBlob(){
+  if(!chart) throw new Error('No chart is loaded yet.');
+  const chartDataUrl = chart.toBase64Image('image/png', 1);
+  const chartImg = await new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=> resolve(img);
+    img.onerror = reject;
+    img.src = chartDataUrl;
+  });
+  // Chart canvas backing store may be scaled by devicePixelRatio vs its CSS size
+  const scale = chartImg.width / (chart.canvas.clientWidth || chartImg.width) || 1;
+  const headerHeight = Math.round(56 * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = chartImg.width;
+  canvas.height = chartImg.height + headerHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = isDark ? '#111827' : '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = isDark ? '#e5e7eb' : '#111827';
+  ctx.textBaseline = 'middle';
+  ctx.font = `${Math.round(22 * scale)}px system-ui, -apple-system, sans-serif`;
+  ctx.fillText($('cityTitle')?.textContent || 'PEVcast Forecast', Math.round(16 * scale), Math.round(headerHeight / 2));
+  ctx.textAlign = 'right';
+  ctx.font = `${Math.round(12 * scale)}px system-ui, -apple-system, sans-serif`;
+  ctx.fillText('PEVcast', canvas.width - Math.round(16 * scale), Math.round(headerHeight / 2));
+  ctx.textAlign = 'left';
+  ctx.drawImage(chartImg, 0, headerHeight);
+  return await new Promise(resolve=> canvas.toBlob(resolve, 'image/png'));
+}
+async function saveChartSnapshot(){
+  const blob = await buildChartSnapshotBlob();
+  const filename = getChartSnapshotFilename();
+  const file = new File([blob], filename, { type: 'image/png' });
+  if(navigator.canShare?.({ files: [file] })){
+    try{
+      await navigator.share({ files: [file], title: 'PEVcast', text: 'PEVcast forecast snapshot' });
+      return;
+    }catch(err){
+      if(err?.name === 'AbortError') return; // user cancelled the share sheet
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
 function showAboutDialog(){
   let backdrop = document.getElementById('aboutBackdrop');
   if(!backdrop){
@@ -2386,13 +2483,17 @@ function showAboutDialog(){
     backdrop.id = 'aboutBackdrop';
     Object.assign(backdrop.style, { position:'fixed', inset:'0', background:'rgba(0,0,0,0.5)', zIndex:'5000', display:'flex', alignItems:'center', justifyContent:'center' });
     const dialog = document.createElement('div');
-    Object.assign(dialog.style, { background: isDark ? '#1f2937' : '#ffffff', color: isDark ? '#e5e7eb' : '#111827', padding:'24px', borderRadius:'12px', maxWidth:'500px', width:'90%', maxHeight:'80vh', overflowY:'auto', boxShadow:'0 10px 40px rgba(0,0,0,0.3)' });
+    Object.assign(dialog.style, { position:'relative', background: isDark ? '#1f2937' : '#ffffff', color: isDark ? '#e5e7eb' : '#111827', padding:'24px', borderRadius:'12px', maxWidth:'500px', width:'90%', maxHeight:'80vh', overflowY:'auto', boxShadow:'0 10px 40px rgba(0,0,0,0.3)' });
     dialog.innerHTML = `
-      <h2 style="margin:0 0 16px 0; font-size:1.5rem;">PEVcast</h2>
+      <button id="aboutShare" aria-label="Share PEVcast" title="Share PEVcast" style="position:absolute; top:12px; right:12px; width:32px; height:32px; padding:0; border:1px solid #0f766e; background:${isDark ? '#134e4a' : '#f0fdfa'}; color:inherit; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+        <svg viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="18" cy="5" r="2.2"/><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="19" r="2.2"/><path d="M8 11l8-4"/><path d="M8 13l8 4"/></svg>
+      </button>
+      <h2 style="margin:0 16px 16px 0; font-size:1.5rem;">PEVcast</h2>
       <p style="margin:0 0 12px 0; opacity:0.9;">Find upcoming nice days for PEV riding</p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">App Version: <strong>${window.APP_VERSION}</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Code Updated: <strong>${CODE_UPDATED}</strong></p>
       <p style="margin:0 0 8px 0; font-size:0.9rem; opacity:0.7;">Created by <strong>Ben Sacherich</strong></p>
+      <p style="margin:0 0 8px 0; font-size:0.8rem; opacity:0.6;">Uses anonymous usage analytics (<a href="https://www.goatcounter.com/" target="_blank" style="color:#3b82f6; text-decoration:none;">GoatCounter</a>) — no cookies, no personal data.</p>
       <div style="margin:16px 0 0 0; padding-top:16px; border-top:1px solid ${isDark ? '#374151' : '#e5e7eb'}">
         <p style="margin:0 0 12px 0; font-weight:600; font-size:0.95rem;">APIs & Libraries:</p>
         <ul style="margin:0 0 16px 0; padding-left:20px; list-style:disc;">
@@ -2412,6 +2513,13 @@ function showAboutDialog(){
     `;
     backdrop.appendChild(dialog);
     document.body.appendChild(backdrop);
+    document.getElementById('aboutShare').addEventListener('click', async ()=>{
+      try{
+        await sharePEVcastLink();
+      }catch(err){
+        alert(err?.message || 'Unable to share PEVcast right now.');
+      }
+    });
     document.getElementById('aboutRevisionLog').addEventListener('click', ()=>{ showRevisionLogDialog(); });
     document.getElementById('aboutClearCache').addEventListener('click', ()=>{
       const message=[
@@ -2583,6 +2691,14 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
+
+
+
+
+
+
+
 
 
 
