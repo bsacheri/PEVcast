@@ -2,6 +2,20 @@
 
 ---
 
+## 7.12.75 - 2026-08-03
+
+> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+
+### Chart
+- Updated chart rendering, annotations, labels, or weather overlays.
+
+### Maintenance
+- Updated application behavior in app.js.
+
+# PEVcast Revision Log
+
+---
+
 ## 7.12.74 - 2026-08-03
 
 ### Chart
@@ -394,6 +408,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
