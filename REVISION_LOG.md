@@ -2,6 +2,12 @@
 
 ---
 
+## 7.12.73 - 2026-08-03
+
+### Versioning
+- Version-sync commit only. No user-facing changes. Bumped app, JS, HTML, CSS, and service-worker cache metadata.
+
+---
 ## 7.12.72 - 2026-08-02
 
 ### Menu and Dialogs
