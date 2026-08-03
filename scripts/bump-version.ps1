@@ -316,9 +316,12 @@ $versionJson.timestamp = $utcTimestamp
 $versionJson.releaseNotes = $releaseNoteText
 $newVersionJsonText = ($versionJson | ConvertTo-Json -Depth 5)
 
-if ($trackedChanges.js) {
+$revisionLogAlreadyProvided = $candidateFiles -contains 'REVISION_LOG.md'
+if ($trackedChanges.js -and -not $revisionLogAlreadyProvided) {
   $revisionEntry = New-RevisionLogEntry -Version $newJsVersion -PublishedAt $localNow -Groups $revisionGroups
   Prepend-RevisionLogEntry -Path $revisionLogPath -Entry $revisionEntry
+} elseif ($revisionLogAlreadyProvided) {
+  Write-Host 'REVISION_LOG.md already updated manually; skipping auto-generated entry.'
 }
 
 Set-Text $indexPath $indexHtml

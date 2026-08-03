@@ -1,4 +1,4 @@
-// app.js @version 7.12.70
+// app.js @version 7.12.73
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.70'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '07/31/2026 4:38 PM';
+(function(){ try{ window.APP_VERSION='7.12.73'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '08/02/2026 8:00 PM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -221,13 +221,13 @@ function syncGpsDefaultCheckbox(){
   const box=$('mGpsDefault');
   if(box) box.checked = readDefaultLocation()?.mode === 'gps';
 }
-function saveCurrentLocationAsDefault(){
+async function saveCurrentLocationAsDefault(){
   const loc=currentLocationRecord();
-  if(!loc){ alert('No current location is loaded yet.'); return; }
+  if(!loc){ await showAlertDialog('No current location is loaded yet.'); return; }
   const match=findDuplicateLocation(loc);
   writeDefaultLocation({ mode:'saved', locationId:match?.id||null, name:loc.name, lat:loc.lat, lon:loc.lon, savedAt:new Date().toISOString() });
   syncGpsDefaultCheckbox();
-  alert(`${loc.name} saved as default.`);
+  await showAlertDialog(`${loc.name} saved as default.`);
 }
 function readDefaultUISettings(){ return readStoredJson(DEFAULT_UI_SETTINGS_KEY) || null; }
 function writeDefaultUISettings(obj){ writeStoredJson(DEFAULT_UI_SETTINGS_KEY, obj); }
@@ -265,20 +265,26 @@ function saveGpsDefault(enabled){
   else if(readDefaultLocation()?.mode==='gps') clearDefaultLocation();
   syncGpsDefaultCheckbox();
 }
-function saveCurrentLocationToQuickList(){
+async function saveCurrentLocationToQuickList(){
   const loc=currentLocationRecord();
-  if(!loc){ alert('No current location is loaded yet.'); return; }
+  if(!loc){ await showAlertDialog('No current location is loaded yet.'); return; }
   const locations=readSavedLocations();
   const duplicate=findDuplicateLocation(loc, locations);
   if(duplicate){
-    const choice=prompt(`"${duplicate.name}" already looks like this location.\nType U to update it, A to add anyway, or C to cancel.`, 'U');
-    const action=(choice||'').trim().toUpperCase();
-    if(action==='C' || action==='') return;
+    const action=await showChoiceDialog(`"${duplicate.name}" already looks like this location.`, {
+      title:'Location already saved',
+      choices:[
+        {label:'Update existing', value:'U'},
+        {label:'Add anyway', value:'A'},
+        {label:'Cancel', value:'C'}
+      ]
+    });
+    if(action==='C' || action==null) return;
     if(action==='U'){
       const updated=locations.map(item=>item.id===duplicate.id ? {...item, name:loc.name, lat:loc.lat, lon:loc.lon} : item);
       writeSavedLocations(updated);
       populateQuickSelectSorted();
-      alert(`${loc.name} updated in Quick List.`);
+      await showAlertDialog(`${loc.name} updated in Quick List.`);
       return;
     }
     if(action!=='A') return;
@@ -286,7 +292,7 @@ function saveCurrentLocationToQuickList(){
   locations.push({...loc, id:createLocationId()});
   writeSavedLocations(locations);
   populateQuickSelectSorted();
-  alert(`${loc.name} saved to Quick List.`);
+  await showAlertDialog(`${loc.name} saved to Quick List.`);
 }
 function requestDeviceLocation(){
   return new Promise((resolve, reject)=>{
@@ -1381,7 +1387,7 @@ function ensureAppMenu(){
   $("mSaveQuickLocation")?.addEventListener('click', ()=>{ saveCurrentLocationToQuickList(); /* keep menu open */ });
   $("mEditQuickLocations")?.addEventListener('click', ()=>{ showQuickListEditor(); /* keep menu open */ });
   if(mCheck){ mCheck.addEventListener('click', ()=>{ checkForUpdates(); /* keep menu open */ }); }
-  if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ alert('Failed to build Weather Data table'); } closeMenu(); }); }
+  if(mData){ mData.addEventListener('click', ()=>{ try{ showWeatherData(); }catch(e){ showAlertDialog('Failed to build Weather Data table'); } closeMenu(); }); }
 
   const mAbout=$("mAbout");
   if(mAbout){ mAbout.addEventListener('click', ()=>{ showAboutDialog(); closeMenu(); }); }
@@ -1594,7 +1600,7 @@ function getAqiSourceFootnote(dataset){
 function showWeatherData(){
   allowNaturalOrientation();
   const modal=ensureDataModal(); const inner=$("dataTableInner"); if(!inner) return;
-  const ds=currentDataset; if(!ds||!ds.hourly){ alert('No dataset loaded'); return; }
+  const ds=currentDataset; if(!ds||!ds.hourly){ showAlertDialog('No dataset loaded'); return; }
   const H=ds.hourly; const cols=H.map(h=>h.time);
   const fields=[
     { label:'Weather', html:h=>`<span style="font-size:18px;line-height:1">${getWeatherSymbol(h)}</span>`, copy:h=>getWeatherSymbol(h), align:'center' },
@@ -1942,8 +1948,8 @@ function setupRangeButtonLongPress(){
 // ---------- Other UI wiring ----------
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleWindSpeedLine(){ WIND_SPEED_LINE_ENABLED=!WIND_SPEED_LINE_ENABLED; localStorage.setItem(WIND_SPEED_LINE_STORAGE_KEY, JSON.stringify(WIND_SPEED_LINE_ENABLED)); WIND_DISPLAY_MODE=WIND_SPEED_LINE_ENABLED?'line':'off'; if(currentDataset) buildChart(currentDataset); }
-async function toggleAirQualityIndex(){ AIR_QUALITY_INDEX_ENABLED=!AIR_QUALITY_INDEX_ENABLED; localStorage.setItem(AIR_QUALITY_INDEX_STORAGE_KEY, JSON.stringify(AIR_QUALITY_INDEX_ENABLED)); if(!currentDataset) return; if(AIR_QUALITY_INDEX_ENABLED && currentLocationLat!=null && currentLocationLon!=null && !currentDataset.hourly?.some(h=>h.airQualityIndex!=null) && !TEST_MODE_ENABLED){ try{ const data=await loadWeatherData(currentCityName || $('cityTitle')?.textContent || 'Current Location', currentLocationLat, currentLocationLon, pastDays); currentDataset=data; buildChart(data); return; }catch(e){ console.warn('Failed to reload AQI data:', e); alert('Air Quality Index was enabled, but AQI data could not be loaded right now.'); } } buildChart(currentDataset); }
-function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const fallback=readSavedLocations()[0] || normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']}); const name=currentCityName||fallback.name; const coords=(currentLocationLat!=null&&currentLocationLon!=null)?{lat:currentLocationLat,lon:currentLocationLon}:fallback; loadCityByName(name, coords).catch(e=> alert(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
+async function toggleAirQualityIndex(){ AIR_QUALITY_INDEX_ENABLED=!AIR_QUALITY_INDEX_ENABLED; localStorage.setItem(AIR_QUALITY_INDEX_STORAGE_KEY, JSON.stringify(AIR_QUALITY_INDEX_ENABLED)); if(!currentDataset) return; if(AIR_QUALITY_INDEX_ENABLED && currentLocationLat!=null && currentLocationLon!=null && !currentDataset.hourly?.some(h=>h.airQualityIndex!=null) && !TEST_MODE_ENABLED){ try{ const data=await loadWeatherData(currentCityName || $('cityTitle')?.textContent || 'Current Location', currentLocationLat, currentLocationLon, pastDays); currentDataset=data; buildChart(data); return; }catch(e){ console.warn('Failed to reload AQI data:', e); await showAlertDialog('Air Quality Index was enabled, but AQI data could not be loaded right now.'); } } buildChart(currentDataset); }
+function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const fallback=readSavedLocations()[0] || normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']}); const name=currentCityName||fallback.name; const coords=(currentLocationLat!=null&&currentLocationLon!=null)?{lat:currentLocationLat,lon:currentLocationLon}:fallback; loadCityByName(name, coords).catch(e=> showAlertDialog(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
   pastDays = 0;
   LAYOUT_MODE = 'fit'; updateLayoutButtonLabel(); const mLay=$('mLayout'); if(mLay) mLay.checked=false;
@@ -1974,7 +1980,7 @@ function ensureScrollScaleSlider(){ const slider=$("mainScrollScale"); const val
 
 function openChartCompare(){
   if(!currentDataset || !Array.isArray(currentDataset.hourly) || currentDataset.hourly.length === 0){
-    alert('Load a forecast before opening Chart Compare.');
+    showAlertDialog('Load a forecast before opening Chart Compare.');
     return;
   }
   const hourly = currentDataset.hourly.map(h => ({
@@ -2001,7 +2007,7 @@ function openChartCompare(){
     window.location.href = 'chart-compare.html';
   }catch(e){
     console.error(e);
-    alert('Unable to open Chart Compare. The forecast dataset could not be saved in this browser session.');
+    showAlertDialog('Unable to open Chart Compare. The forecast dataset could not be saved in this browser session.');
   }
 }
 
@@ -2027,12 +2033,12 @@ function buildAirNowMapUrl(lat, lon){
 }
 function openAirNowMap(){
   if(currentLocationLat == null || currentLocationLon == null){
-    alert('Please select a location first.');
+    showAlertDialog('Please select a location first.');
     return;
   }
   window.open(buildAirNowMapUrl(currentLocationLat, currentLocationLon), '_blank', 'noopener,noreferrer');
 }
-async function loadCityByName(cityName, coords){ try{ lastClickedIndex=null; lastClickedTime=null; const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); alert(e?.message || 'Failed to load weather data.'); } }
+async function loadCityByName(cityName, coords){ try{ lastClickedIndex=null; lastClickedTime=null; const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); await showAlertDialog(e?.message || 'Failed to load weather data.'); } }
 async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs ? qs.value : null; if(!id) return; const loc=findSavedLocationById(id); if(!loc) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(loc.name, loc); if(qs) qs.value=''; }
 
 function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
@@ -2152,7 +2158,7 @@ async function reverseGeocode(lat, lon){
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); for (const loc of readSavedLocations()){ const opt=document.createElement('option'); opt.value=loc.id; opt.textContent=loc.name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ if(!isGpsCancelError(err)) alert('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
+function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ if(!isGpsCancelError(err)) await showAlertDialog('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -2192,12 +2198,12 @@ async function checkForUpdates(){
       return true;
     } else {
       console.log('[Update] Already on latest version');
-      alert(`PEVcast is already up to date (v${current.js || '?.?.?'}).`);
+      await showAlertDialog(`PEVcast is already up to date (v${current.js || '?.?.?'}).`);
       return false;
     }
   } catch (e) {
     console.error('[Update] Check failed:', e);
-    alert('Failed to check for updates. Please try again.');
+    await showAlertDialog('Failed to check for updates. Please try again.');
     return false;
   }
 }
@@ -2244,8 +2250,8 @@ async function loadStartupGpsWithRetry(saveAsDefault=true){
       if(isGpsCancelError(e)) return false;
       const timedOut=isGpsTimeoutError(e);
       hideLocationLoading();
-      if(timedOut && confirm('GPS location timed out. Do you want to try again?')) continue;
-      if(!timedOut) alert('Unable to get GPS location: '+(e?.message||'Unknown error'));
+      if(timedOut && await showConfirmDialog('GPS location timed out. Do you want to try again?', {title:'GPS Timeout'})) continue;
+      if(!timedOut) await showAlertDialog('Unable to get GPS location: '+(e?.message||'Unknown error'));
       return false;
     }finally{
       hideLocationLoading();
@@ -2288,7 +2294,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.70`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.73`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2300,7 +2306,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
 
   $("quickSelect")?.addEventListener("change", handleQuickSelectChange);
-  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const coords=parseCoordinateSearch(q); if(coords){ await loadCoordinatesLocation(coords.lat, coords.lon, false); const qs=$("quickSelect"); if(qs) qs.value=''; return; } const results=await geocodeCity(q); if(results.length===0){ alert('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); alert('Search failed.'); } });
+  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const coords=parseCoordinateSearch(q); if(coords){ await loadCoordinatesLocation(coords.lat, coords.lon, false); const qs=$("quickSelect"); if(qs) qs.value=''; return; } const results=await geocodeCity(q); if(results.length===0){ await showAlertDialog('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); await showAlertDialog('Search failed.'); } });
   $("themeToggle")?.addEventListener("click", toggleTheme);
   $("testModeToggle")?.addEventListener("click", toggleTestMode);
   setupRangeButtonLongPress();
@@ -2310,14 +2316,11 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
   $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
   $("airNowBtn")?.addEventListener("click", openAirNowMap);
-  $("snapshotBtn")?.addEventListener("click", async ()=>{
-    try{ await saveChartSnapshot(); }
-    catch(err){ console.error(err); alert(err?.message || 'Unable to save chart snapshot.'); }
-  });
+  $("snapshotBtn")?.addEventListener("click", ()=> showSnapshotScopeDialog());
 
   try{
     await loadInitialLocation();
-  }catch(e){ console.error(e); alert(e?.message||'Failed to load initial data.'); }
+  }catch(e){ console.error(e); await showAlertDialog(e?.message||'Failed to load initial data.'); }
 
   window.addEventListener('resize', ()=>{ if(chart?.data?.labels?.length){ try{ applyLayout(chart.data.labels); resizeChartForCurrentLayout(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart);}catch{} } });
 });
@@ -2416,17 +2419,32 @@ async function sharePEVcastLink(){
   }
   if(navigator.clipboard?.writeText){
     await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
-    alert('PEVcast link copied to clipboard.');
+    await showAlertDialog('PEVcast link copied to clipboard.');
     return;
   }
-  alert(`${shareData.text}\n${shareData.url}`);
+  await showAlertDialog(`${shareData.text}\n${shareData.url}`);
 }
 function getChartSnapshotFilename(){
   const city = (currentCityName || $('cityTitle')?.textContent || 'forecast').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   return `PEVcast-${city || 'forecast'}-${stamp}.png`;
 }
-async function buildChartSnapshotBlob(){
+const SNAPSHOT_SCOPE_KEY = 'PEVcast-snapshot-scope-v1';
+function readSnapshotScope(){
+  const saved = readStoredJson(SNAPSHOT_SCOPE_KEY);
+  return (saved && saved.scope === 'visible') ? 'visible' : 'all';
+}
+function writeSnapshotScope(scope){ writeStoredJson(SNAPSHOT_SCOPE_KEY, { scope }); }
+function getRangeShortLabel(){
+  if(pastDays > 0) return `-${pastDays}d`;
+  const rangeState = RANGE_STATES[rangeIndex];
+  if(rangeState === 24) return '24h';
+  if(rangeState === 72) return '3d';
+  if(rangeState === 168) return '7d';
+  if(rangeState === 'max') return '15d';
+  return `${rangeState}h`;
+}
+async function buildChartSnapshotBlob(scope = 'all'){
   if(!chart) throw new Error('No chart is loaded yet.');
   const chartDataUrl = chart.toBase64Image('image/png', 1);
   const chartImg = await new Promise((resolve, reject)=>{
@@ -2437,9 +2455,15 @@ async function buildChartSnapshotBlob(){
   });
   // Chart canvas backing store may be scaled by devicePixelRatio vs its CSS size
   const scale = chartImg.width / (chart.canvas.clientWidth || chartImg.width) || 1;
+  const scroller = $('chartScroll');
+  let srcX = 0, srcWidth = chartImg.width;
+  if(scope === 'visible' && scroller && scroller.scrollWidth > scroller.clientWidth + 1){
+    srcX = Math.round(scroller.scrollLeft * scale);
+    srcWidth = Math.min(Math.round(scroller.clientWidth * scale), chartImg.width - srcX);
+  }
   const headerHeight = Math.round(56 * scale);
   const canvas = document.createElement('canvas');
-  canvas.width = chartImg.width;
+  canvas.width = srcWidth;
   canvas.height = chartImg.height + headerHeight;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = isDark ? '#111827' : '#ffffff';
@@ -2452,11 +2476,23 @@ async function buildChartSnapshotBlob(){
   ctx.font = `${Math.round(12 * scale)}px system-ui, -apple-system, sans-serif`;
   ctx.fillText('PEVcast', canvas.width - Math.round(16 * scale), Math.round(headerHeight / 2));
   ctx.textAlign = 'left';
-  ctx.drawImage(chartImg, 0, headerHeight);
+  ctx.drawImage(chartImg, srcX, 0, srcWidth, chartImg.height, 0, headerHeight, srcWidth, chartImg.height);
   return await new Promise(resolve=> canvas.toBlob(resolve, 'image/png'));
 }
-async function saveChartSnapshot(){
-  const blob = await buildChartSnapshotBlob();
+async function downloadChartSnapshot(scope = 'all'){
+  const blob = await buildChartSnapshotBlob(scope);
+  const filename = getChartSnapshotFilename();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+async function shareChartSnapshot(scope = 'all'){
+  const blob = await buildChartSnapshotBlob(scope);
   const filename = getChartSnapshotFilename();
   const file = new File([blob], filename, { type: 'image/png' });
   if(navigator.canShare?.({ files: [file] })){
@@ -2467,14 +2503,139 @@ async function saveChartSnapshot(){
       if(err?.name === 'AbortError') return; // user cancelled the share sheet
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+  await downloadChartSnapshot(scope); // native sharing unavailable: fall back to a direct save
+}
+// ======= Styled dialog helpers (replace native alert/confirm/prompt) =======
+function createDialogBackdrop(){
+  const backdrop = document.createElement('div');
+  Object.assign(backdrop.style, { position:'fixed', inset:'0', background:'rgba(0,0,0,0.55)', zIndex:'6000', display:'flex', alignItems:'center', justifyContent:'center', padding:'16px', boxSizing:'border-box' });
+  return backdrop;
+}
+function createDialogCard(){
+  const card = document.createElement('div');
+  Object.assign(card.style, { background:isDark?'#1f2937':'#ffffff', color:isDark?'#e5e7eb':'#111827', padding:'20px', borderRadius:'12px', maxWidth:'380px', width:'90%', boxShadow:'0 10px 40px rgba(0,0,0,0.3)' });
+  return card;
+}
+function dialogButtonHtml(id, label, {borderColor, background, color='inherit'}){
+  return `<button id="${id}" style="padding:10px; border:1px solid ${borderColor}; background:${background}; color:${color}; border-radius:6px; cursor:pointer; font-size:0.95rem;">${escapeHtml(label)}</button>`;
+}
+// message/title are escaped internally; callers may pass plain text safely (no need to pre-escape)
+function showAlertDialog(message, {title='PEVcast', okText='OK'}={}){
+  return new Promise(resolve=>{
+    const borderColor = isDark?'#374151':'#d1d5db';
+    const backdrop = createDialogBackdrop();
+    const card = createDialogCard();
+    card.innerHTML = `
+      <h2 style="margin:0 0 12px 0; font-size:1.05rem;">${escapeHtml(title)}</h2>
+      <p style="margin:0 0 18px 0; font-size:0.92rem; white-space:pre-line; line-height:1.4;">${escapeHtml(message)}</p>
+      ${dialogButtonHtml('dlgOkBtn', okText, {borderColor, background:isDark?'#111827':'#f3f4f6'})}
+    `;
+    card.querySelector('#dlgOkBtn').style.width='100%';
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    const finish = ()=>{ document.removeEventListener('keydown', onKey); backdrop.remove(); resolve(); };
+    card.querySelector('#dlgOkBtn').addEventListener('click', finish);
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) finish(); });
+    const onKey = e=>{ if(e.key==='Escape' || e.key==='Enter') finish(); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+function showConfirmDialog(message, {title='Confirm', confirmText='OK', cancelText='Cancel', danger=false}={}){
+  return new Promise(resolve=>{
+    const borderColor = isDark?'#374151':'#d1d5db';
+    const backdrop = createDialogBackdrop();
+    const card = createDialogCard();
+    const confirmStyle = danger
+      ? {borderColor:'#7f1d1d', background:'#7f1d1d', color:'#ffffff'}
+      : {borderColor, background:isDark?'#111827':'#f3f4f6'};
+    card.innerHTML = `
+      <h2 style="margin:0 0 12px 0; font-size:1.05rem;">${escapeHtml(title)}</h2>
+      <p style="margin:0 0 18px 0; font-size:0.92rem; white-space:pre-line; line-height:1.4;">${escapeHtml(message)}</p>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        ${dialogButtonHtml('dlgConfirmBtn', confirmText, confirmStyle)}
+        ${dialogButtonHtml('dlgCancelBtn', cancelText, {borderColor, background:'transparent'})}
+      </div>
+    `;
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    const finish = (result)=>{ document.removeEventListener('keydown', onKey); backdrop.remove(); resolve(result); };
+    card.querySelector('#dlgConfirmBtn').addEventListener('click', ()=>finish(true));
+    card.querySelector('#dlgCancelBtn').addEventListener('click', ()=>finish(false));
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) finish(false); });
+    const onKey = e=>{ if(e.key==='Escape') finish(false); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+function showChoiceDialog(message, {title='Choose an option', choices=[]}={}){
+  return new Promise(resolve=>{
+    const borderColor = isDark?'#374151':'#d1d5db';
+    const backdrop = createDialogBackdrop();
+    const card = createDialogCard();
+    const buttonsHtml = choices.map((c,i)=>dialogButtonHtml(`dlgChoice${i}`, c.label, {borderColor, background:isDark?'#111827':'#f3f4f6'})).join('');
+    card.innerHTML = `
+      <h2 style="margin:0 0 12px 0; font-size:1.05rem;">${escapeHtml(title)}</h2>
+      <p style="margin:0 0 18px 0; font-size:0.92rem; white-space:pre-line; line-height:1.4;">${escapeHtml(message)}</p>
+      <div style="display:flex; flex-direction:column; gap:8px;">${buttonsHtml}</div>
+    `;
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    const finish = (result)=>{ document.removeEventListener('keydown', onKey); backdrop.remove(); resolve(result); };
+    choices.forEach((c,i)=> card.querySelector(`#dlgChoice${i}`).addEventListener('click', ()=>finish(c.value)));
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) finish(null); });
+    const onKey = e=>{ if(e.key==='Escape') finish(null); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+function showSnapshotScopeDialog(){
+  let scope = readSnapshotScope();
+  document.getElementById('snapshotScopeBackdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.id = 'snapshotScopeBackdrop';
+  Object.assign(backdrop.style, { position:'fixed', inset:'0', background:'rgba(0,0,0,0.55)', zIndex:'5200', display:'flex', alignItems:'center', justifyContent:'center', padding:'16px', boxSizing:'border-box' });
+  const dialog = document.createElement('div');
+  Object.assign(dialog.style, { background:isDark?'#1f2937':'#ffffff', color:isDark?'#e5e7eb':'#111827', padding:'20px', borderRadius:'12px', maxWidth:'360px', width:'90%', boxShadow:'0 10px 40px rgba(0,0,0,0.3)' });
+  const borderColor = isDark?'#374151':'#d1d5db';
+  dialog.innerHTML = `
+    <h2 style="margin:0 0 14px 0; font-size:1.05rem;">Save Chart Snapshot</h2>
+    <div id="snapshotScopeToggle" style="display:flex; border:1px solid ${borderColor}; border-radius:8px; overflow:hidden; margin-bottom:16px;">
+      <button type="button" data-scope="visible" style="flex:1; padding:8px 6px; border:none; cursor:pointer; font-size:0.88rem;">Visible Range</button>
+      <button type="button" data-scope="all" style="flex:1; padding:8px 6px; border:none; cursor:pointer; font-size:0.88rem;">All ${getRangeShortLabel()}</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button id="snapshotSaveBtn" style="padding:10px; border:1px solid ${borderColor}; background:${isDark?'#111827':'#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Save</button>
+      <button id="snapshotShareBtn" style="padding:10px; border:1px solid ${borderColor}; background:${isDark?'#111827':'#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Share</button>
+      <button id="snapshotCancelBtn" style="padding:10px; border:1px solid ${borderColor}; background:transparent; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Cancel</button>
+    </div>`;
+  backdrop.appendChild(dialog);
+  document.body.appendChild(backdrop);
+
+  const toggleBtns = dialog.querySelectorAll('#snapshotScopeToggle button');
+  const paintToggle = ()=> toggleBtns.forEach(btn=>{
+    const active = btn.dataset.scope === scope;
+    btn.style.background = active ? '#0d9488' : 'transparent';
+    btn.style.color = active ? '#ffffff' : 'inherit';
+    btn.style.fontWeight = active ? '600' : '400';
+  });
+  paintToggle();
+  toggleBtns.forEach(btn=> btn.addEventListener('click', ()=>{
+    scope = btn.dataset.scope;
+    writeSnapshotScope(scope);
+    paintToggle();
+  }));
+
+  const close = ()=> backdrop.remove();
+  dialog.querySelector('#snapshotSaveBtn').addEventListener('click', async ()=>{
+    close();
+    try{ await downloadChartSnapshot(scope); }
+    catch(err){ console.error(err); await showAlertDialog(err?.message || 'Unable to save chart snapshot.'); }
+  });
+  dialog.querySelector('#snapshotShareBtn').addEventListener('click', async ()=>{
+    close();
+    try{ await shareChartSnapshot(scope); }
+    catch(err){ console.error(err); await showAlertDialog(err?.message || 'Unable to share chart snapshot.'); }
+  });
+  dialog.querySelector('#snapshotCancelBtn').addEventListener('click', close);
+  backdrop.addEventListener('click', e=>{ if(e.target===backdrop) close(); });
 }
 function showAboutDialog(){
   let backdrop = document.getElementById('aboutBackdrop');
@@ -2517,11 +2678,11 @@ function showAboutDialog(){
       try{
         await sharePEVcastLink();
       }catch(err){
-        alert(err?.message || 'Unable to share PEVcast right now.');
+        await showAlertDialog(err?.message || 'Unable to share PEVcast right now.');
       }
     });
     document.getElementById('aboutRevisionLog').addEventListener('click', ()=>{ showRevisionLogDialog(); });
-    document.getElementById('aboutClearCache').addEventListener('click', ()=>{
+    document.getElementById('aboutClearCache').addEventListener('click', async ()=>{
       const message=[
         'Clear all saved PEVcast settings from local storage?',
         '',
@@ -2535,9 +2696,10 @@ function showAboutDialog(){
         '',
         'You will need to reconfigure these after the app reloads.'
       ].join('\n');
-      if(!confirm(message)) return;
+      const confirmed = await showConfirmDialog(message, {title:'Clear Cache', confirmText:'Clear Cache', cancelText:'Cancel', danger:true});
+      if(!confirmed) return;
       localStorage.clear();
-      alert('Saved settings cleared. The app will reload.');
+      await showAlertDialog('Saved settings cleared. The app will reload.');
       window.location.reload();
     });
     document.getElementById('aboutClose').addEventListener('click', ()=>{ backdrop.remove(); });
@@ -2625,7 +2787,7 @@ btn.style.cursor = 'pointer';
   }
   btn.addEventListener('click', ()=>{
     if(currentLocationLat === null || currentLocationLon === null){
-      alert('Please select a location first.');
+      showAlertDialog('Please select a location first.');
       return;
     }
     const settings = {
@@ -2691,6 +2853,9 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
+
+
 
 
 

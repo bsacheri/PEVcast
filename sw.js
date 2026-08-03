@@ -1,7 +1,7 @@
 // Service Worker for PEVcast PWA
 // Caching strategy: Cache-first for app shell; Network-first for data
 
-const CACHE_VERSION = 'vhtml-7.12.40-css-7.12.37-js-7.12.70';
+const CACHE_VERSION = 'vhtml-7.12.42-css-7.12.39-js-7.12.73';
 const CACHE_NAME = `pevcast-${CACHE_VERSION}`;
 
 // Assets to cache on install (app shell)
@@ -130,6 +130,9 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+
+
 
 
 

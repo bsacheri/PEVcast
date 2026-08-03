@@ -2,7 +2,23 @@
 
 ---
 
+## 7.12.72 - 2026-08-02
+
+### Menu and Dialogs
+- Replaced native browser `alert()`/`confirm()`/`prompt()` popups throughout the app with custom-styled, theme-aware dialogs (`showAlertDialog`, `showConfirmDialog`, `showChoiceDialog`) matching the existing About/Snapshot dialog look.
+- The "location already saved" prompt in Quick List now shows a 3-button choice dialog (Update existing / Add anyway / Cancel) instead of a free-text prompt.
+- The About dialog's Clear Cache action now uses a red/danger-styled confirm dialog since it clears all saved settings.
+- GPS timeout retry now uses the same styled confirm dialog instead of the native `confirm()`.
+- The Snapshot button now opens a custom dialog with a remembered Visible Range / All range toggle plus separate Save, Share, and Cancel actions.
+
+### Versioning
+- Updated `scripts/bump-version.ps1` so a manually-written `REVISION_LOG.md` entry is no longer overwritten by an auto-generated boilerplate entry on commit.
+- Removed legacy auto-generated placeholder sections from older entries while preserving each version/date heading for historical continuity.  Automated revision logging based on session context should now be improved.
+
+---
+
 ## 7.12.70 - 2026-07-31
+
 
 ### Sharing
 - Added a Share button to the About dialog using the Web Share API (with a clipboard-copy fallback) to share the app link, captioned "Try PEVcast".
@@ -42,92 +58,17 @@
 
 ## 7.12.60 - 2026-07-16
 
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
-
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
-### Versioning
-- Updated PWA, cache, or published version metadata.
-- Updated version automation, release notes, or cache-version syncing.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
-
 ---
 
 ## 7.12.59 - 2026-07-16
-
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
-### Maintenance
-- Updated application behavior in app.js.
 
 ---
 
 ## 7.12.58 - 2026-07-08
 
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
-
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### API
-- Updated browser-side API calls, fallback handling, or cache-busting behavior.
-
-### Versioning
-- Updated version automation, release notes, or cache-version syncing.
-
-### Maintenance
-- Updated application behavior in app.js.
-
 ---
 
 ## 7.12.57 - 2026-07-03
-
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
-
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated shared styling in styles.css.
 
 ---
 
@@ -242,25 +183,6 @@
 ---
 
 ## 7.12.49 - 2026-05-13
-
-> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
-
-### Chart
-- Updated chart rendering, annotations, labels, or weather overlays.
-
-### Menu and Dialogs
-- Updated menu options, About dialog controls, or app dialogs.
-
-### Weather Data Popup
-- Updated the Hourly Weather Data popup display, selection, or copy behavior.
-
-### Locations
-- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
-
-### Maintenance
-- Updated application behavior in app.js.
-- Updated the page shell or version metadata in index.html.
-- Updated shared styling in styles.css.
 
 ---
 
