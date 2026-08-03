@@ -1,4 +1,4 @@
-// app.js @version 7.12.73
+// app.js @version 7.12.74
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.73'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '08/02/2026 8:00 PM';
+(function(){ try{ window.APP_VERSION='7.12.74'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '08/03/2026 1:09 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -2294,7 +2294,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.73`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.74`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2456,6 +2456,10 @@ async function buildChartSnapshotBlob(scope = 'all'){
   // Chart canvas backing store may be scaled by devicePixelRatio vs its CSS size
   const scale = chartImg.width / (chart.canvas.clientWidth || chartImg.width) || 1;
   const scroller = $('chartScroll');
+  const leftAxisCanvas = document.getElementById('stickyYAxisLeftCanvas');
+  const rightAxisCanvas = document.getElementById('stickyYAxisRightCanvas');
+  const leftAxisWidth = leftAxisCanvas ? Math.max(0, Math.round((leftAxisCanvas.clientWidth || 0) * scale)) : 0;
+  const rightAxisWidth = rightAxisCanvas ? Math.max(0, Math.round((rightAxisCanvas.clientWidth || 0) * scale)) : 0;
   let srcX = 0, srcWidth = chartImg.width;
   if(scope === 'visible' && scroller && scroller.scrollWidth > scroller.clientWidth + 1){
     srcX = Math.round(scroller.scrollLeft * scale);
@@ -2463,7 +2467,7 @@ async function buildChartSnapshotBlob(scope = 'all'){
   }
   const headerHeight = Math.round(56 * scale);
   const canvas = document.createElement('canvas');
-  canvas.width = srcWidth;
+  canvas.width = leftAxisWidth + srcWidth + rightAxisWidth;
   canvas.height = chartImg.height + headerHeight;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = isDark ? '#111827' : '#ffffff';
@@ -2476,7 +2480,13 @@ async function buildChartSnapshotBlob(scope = 'all'){
   ctx.font = `${Math.round(12 * scale)}px system-ui, -apple-system, sans-serif`;
   ctx.fillText('PEVcast', canvas.width - Math.round(16 * scale), Math.round(headerHeight / 2));
   ctx.textAlign = 'left';
-  ctx.drawImage(chartImg, srcX, 0, srcWidth, chartImg.height, 0, headerHeight, srcWidth, chartImg.height);
+  if(leftAxisCanvas && leftAxisWidth > 0){
+    ctx.drawImage(leftAxisCanvas, 0, 0, leftAxisCanvas.width, leftAxisCanvas.height, 0, headerHeight, leftAxisWidth, chartImg.height);
+  }
+  ctx.drawImage(chartImg, srcX, 0, srcWidth, chartImg.height, leftAxisWidth, headerHeight, srcWidth, chartImg.height);
+  if(rightAxisCanvas && rightAxisWidth > 0){
+    ctx.drawImage(rightAxisCanvas, 0, 0, rightAxisCanvas.width, rightAxisCanvas.height, leftAxisWidth + srcWidth, headerHeight, rightAxisWidth, chartImg.height);
+  }
   return await new Promise(resolve=> canvas.toBlob(resolve, 'image/png'));
 }
 async function downloadChartSnapshot(scope = 'all'){

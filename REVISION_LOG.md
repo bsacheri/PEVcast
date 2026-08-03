@@ -80,6 +80,9 @@
 
 ## Unreleased
 
+### Chart
+- Snapshot exports now include the visible sticky vertical axes (including the left temperature color gradient axis) instead of only the main chart canvas.
+
 ### Android Back Button
 - Removed the `Close PEVcast?` confirmation prompt from the main-screen Back flow.
 - Back still closes open menus and dialogs before requesting the app close.
@@ -385,7 +388,6 @@
 
 ### Maintenance
 - Initial PEVcast development.
-
 
 
 
