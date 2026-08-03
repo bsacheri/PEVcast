@@ -2,6 +2,12 @@
 
 ---
 
+## 7.12.74 - 2026-08-03
+
+### Chart
+- Snapshot exports now include the visible sticky vertical axes (left temperature gradient/color bar and right accumulation axis) so saved images match what is visible on screen.
+
+---
 ## 7.12.73 - 2026-08-03
 
 ### Versioning
