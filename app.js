@@ -1,4 +1,4 @@
-// app.js @version 7.12.75
+// app.js @version 7.12.76
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.75'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '08/03/2026 1:18 AM';
+(function(){ try{ window.APP_VERSION='7.12.76'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '08/08/2026 1:54 AM';
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
@@ -51,6 +51,16 @@ const WIND_SPEED_LINE_STORAGE_KEY = 'PEVcast-wind-speed-line';
 let WIND_SPEED_LINE_ENABLED = localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(WIND_SPEED_LINE_STORAGE_KEY)) : true;
 const AIR_QUALITY_INDEX_STORAGE_KEY = 'PEVcast-air-quality-index';
 let AIR_QUALITY_INDEX_ENABLED = localStorage.getItem(AIR_QUALITY_INDEX_STORAGE_KEY) !== null ? JSON.parse(localStorage.getItem(AIR_QUALITY_INDEX_STORAGE_KEY)) : false;
+// Open-Meteo weather model selection. "best_match" is Open-Meteo's auto-blended default.
+const WEATHER_MODEL_STORAGE_KEY = 'PEVcast-weather-model';
+const WEATHER_MODEL_OPTIONS = [
+  { value: 'best_match', label: 'Auto (Best Match)' },
+  { value: 'gfs_seamless', label: 'GFS (NOAA, US)' },
+  { value: 'ecmwf_ifs025', label: 'ECMWF IFS (Global)' },
+  { value: 'icon_seamless', label: 'ICON (DWD, Europe)' }
+];
+let WEATHER_MODEL = WEATHER_MODEL_OPTIONS.some(o => o.value === localStorage.getItem(WEATHER_MODEL_STORAGE_KEY))
+  ? localStorage.getItem(WEATHER_MODEL_STORAGE_KEY) : 'best_match';
 const AIRNOW_TIMEOUT_MS = 4500;
 const AIRNOW_STALE_MS = 3 * 60 * 60 * 1000;
 let WIND_DISPLAY_MODE = WIND_SPEED_LINE_ENABLED ? 'line' : 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
@@ -417,14 +427,26 @@ async function geocodeCity(query){
   const res = await fetch(url); if (!res.ok) throw new Error('Geocoding failed');
   const data = await res.json(); return data.results || [];
 }
-async function fetchForecastLive(lat, lon, pastDaysParam=0){
+async function fetchForecastLive(lat, lon, pastDaysParam=0, model=WEATHER_MODEL){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&hourly=temperature_2m,apparent_temperature,precipitation,rain,snowfall,wind_speed_10m,wind_direction_10m,precipitation_probability`
     + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset`
     + `&timezone=auto&forecast_days=16&wind_speed_unit=mph&precipitation_unit=mm`
-    + (pastDaysParam > 0 ? `&past_days=${pastDaysParam}` : '&past_hours=4');
+    + (pastDaysParam > 0 ? `&past_days=${pastDaysParam}` : '&past_hours=4')
+    + (model && model !== 'best_match' ? `&models=${encodeURIComponent(model)}` : '');
   const res = await fetch(url); if (!res.ok) throw new Error('Forecast fetch failed'); const fetchedAt = res.headers.get('date') || new Date().toISOString();
   const data = await res.json(); data._fetchedAt = fetchedAt; return data;
+}
+
+// Fetch several models side-by-side for near-term storm cross-checking (Compare Models dialog).
+async function fetchModelComparisonLive(lat, lon){
+  const modelsParam = WEATHER_MODEL_OPTIONS.map(m => m.value).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+    + `&hourly=temperature_2m,precipitation,precipitation_probability`
+    + `&timezone=auto&forecast_days=3&past_hours=1&wind_speed_unit=mph&precipitation_unit=mm`
+    + `&models=${modelsParam}`;
+  const res = await fetch(url); if (!res.ok) throw new Error('Model comparison fetch failed');
+  return res.json();
 }
 
 function getAirNowApiKey(){
@@ -1361,6 +1383,15 @@ function ensureAppMenu(){
       <button id="mEditQuickLocations" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Edit Quick List</button>
     </div>
   </div>
+  <div id="mForecastSourceSection" style="margin:8px 0;border-bottom:1px solid rgba(107,114,128,0.35);padding:0 0 8px 0">
+    <div style="font-weight:700;user-select:none;margin-bottom:6px">Forecast Source</div>
+    <label style="display:flex;flex-direction:column;gap:4px;margin:2px 0;font-size:13px">Weather Model
+      <select id="mWeatherModel" style="width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#111927;color:#e5e7eb;padding:0 8px">
+        ${WEATHER_MODEL_OPTIONS.map(o=>`<option value="${o.value}">${escapeHtml(o.label)}</option>`).join('')}
+      </select>
+    </label>
+    <button id="mCompareModels" style="margin-top:8px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Compare Models</button>
+  </div>
   <button id="mData" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Weather Data</button>
   <button id="mCheck" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">Check for Updates</button>
   <button id="mAbout" style="margin-top:6px;width:100%;height:32px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e5e7eb;cursor:pointer">About</button>
@@ -1381,6 +1412,9 @@ function ensureAppMenu(){
   if(mWindLine){ mWindLine.checked = WIND_SPEED_LINE_ENABLED; mWindLine.addEventListener('change', ()=>{ toggleWindSpeedLine(); mWindLine.checked=WIND_SPEED_LINE_ENABLED; /* keep menu open */ }); }
   if(mAqi){ mAqi.checked = AIR_QUALITY_INDEX_ENABLED; mAqi.addEventListener('change', ()=>{ toggleAirQualityIndex(); mAqi.checked=AIR_QUALITY_INDEX_ENABLED; /* keep menu open */ }); }
   if(mHeight){ updateChartHeightButtonLabel(); mHeight.addEventListener('click', ()=>{ toggleChartHeight(); /* keep menu open */ }); }
+  const mWeatherModel=$("mWeatherModel");
+  if(mWeatherModel){ mWeatherModel.value = WEATHER_MODEL; mWeatherModel.addEventListener('change', ()=>{ setWeatherModel(mWeatherModel.value); /* keep menu open */ }); }
+  $("mCompareModels")?.addEventListener('click', ()=>{ showCompareModels(); closeMenu(); });
   syncGpsDefaultCheckbox();
   $("mSaveDefaultLocation")?.addEventListener('click', ()=>{ saveCurrentLocationAsDefault(); /* keep menu open */ });
   $("mGpsDefault")?.addEventListener('change', (e)=>{ saveGpsDefault(!!e.target.checked); /* keep menu open */ });
@@ -1687,6 +1721,68 @@ function showWeatherData(){
   requestAnimationFrame(()=>centerWeatherDataColumn(table, selectedCol));
 }
 
+// ---------- Compare Models dialog ----------
+function ensureCompareModal(){
+  if($("compareModal")) return $("compareModal");
+  const modal=document.createElement('div'); modal.id='compareModal'; Object.assign(modal.style,{position:'fixed',inset:'0',background:'rgba(0,0,0,0.35)',display:'none',zIndex:'4000'});
+  const panel=document.createElement('div'); panel.id='comparePanel'; Object.assign(panel.style,{position:'absolute',left:'50%',top:'10%',transform:'translateX(-50%)',width:'90%',maxWidth:'1200px',maxHeight:'75%',overflow:'hidden',background:isDark?'#0b1220':'#ffffff',color:isDark?'#e5e7eb':'#111827',border:'1px solid rgba(0,0,0,0.2)',borderRadius:'10px',boxShadow:'0 10px 30px rgba(0,0,0,0.35)'});
+  const head=document.createElement('div'); Object.assign(head.style,{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid rgba(0,0,0,0.15)'});
+  head.innerHTML=`<div style="font-weight:600">Compare Weather Models</div>`;
+  const close=document.createElement('button'); close.textContent='✕'; Object.assign(close.style,{border:'1px solid rgba(0,0,0,0.2)',borderRadius:'6px',background:'transparent',color:'inherit',cursor:'pointer',height:'28px',width:'32px'}); close.addEventListener('click', ()=> modal.style.display='none');
+  head.appendChild(close);
+  const wrap=document.createElement('div'); wrap.id='compareTableWrap'; Object.assign(wrap.style,{overflowX:'auto',overflowY:'auto',maxHeight:'calc(75vh - 48px)'});
+  const inner=document.createElement('div'); inner.id='compareTableInner'; inner.style.padding='10px'; wrap.appendChild(inner);
+  panel.appendChild(head); panel.appendChild(wrap); modal.appendChild(panel); document.body.appendChild(modal);
+  modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.style.display='none'; });
+  return modal;
+}
+
+async function showCompareModels(){
+  if(currentLocationLat==null || currentLocationLon==null){ await showAlertDialog('Load a location first.'); return; }
+  allowNaturalOrientation();
+  const modal=ensureCompareModal(); const inner=$("compareTableInner"); if(!inner) return;
+  modal.style.display='block';
+  inner.innerHTML='<div style="padding:20px;text-align:center;opacity:0.75">Loading model comparison…</div>';
+  let apiData;
+  try{ apiData = await fetchModelComparisonLive(currentLocationLat, currentLocationLon); }
+  catch(e){ inner.innerHTML=`<div style="padding:20px;color:#ef4444">${escapeHtml(e?.message || 'Failed to load model comparison.')}</div>`; return; }
+  const hourly = apiData.hourly || {};
+  const times = hourly.time || [];
+  const nowIdx = Math.max(0, findCurrentOrPreviousHourIndex(times));
+  const endIdx = Math.min(times.length, nowIdx + 36); // next ~36 hours
+  const headerBg = isDark ? '#111827' : '#f3f4f6';
+  const cellBg = isDark ? '#0b1220' : '#ffffff';
+
+  let html = `<div style="font-size:12px;opacity:0.8;margin-bottom:8px">Temperature (\u00B0F) and precipitation (mm) per hour across models. A cell shaded red means that model shows much less precipitation than the others for that hour — useful for cross-checking a missed storm.</div>`;
+  html += `<table id="compareTable" style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif; width:100%">`;
+  html += `<tr><th rowspan="2" style="position:sticky;left:0;background:${headerBg};padding:6px 8px;border:1px solid #374151">Time</th>`;
+  WEATHER_MODEL_OPTIONS.forEach(m=>{ html += `<th colspan="2" style="padding:6px 8px;border:1px solid #374151;text-align:center;background:${headerBg}">${escapeHtml(m.label)}</th>`; });
+  html += '</tr><tr>';
+  WEATHER_MODEL_OPTIONS.forEach(()=>{ html += `<th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Temp</th><th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Precip</th>`; });
+  html += '</tr>';
+
+  for(let i=nowIdx; i<endIdx; i++){
+    const t = times[i];
+    const precipVals = WEATHER_MODEL_OPTIONS.map(m=>{ const arr = hourly[`precipitation_${m.value}`]; return arr ? arr[i] : null; });
+    const maxPrecip = Math.max(0, ...precipVals.filter(v=>v!=null));
+    html += `<tr><td style="position:sticky;left:0;background:${cellBg};padding:6px 8px;border:1px solid #374151;white-space:nowrap">${escapeHtml(formatWeatherDataHeader(t, ' '))}</td>`;
+    WEATHER_MODEL_OPTIONS.forEach(m=>{
+      const tempArr = hourly[`temperature_2m_${m.value}`];
+      const precipArr = hourly[`precipitation_${m.value}`];
+      const tempC = tempArr ? tempArr[i] : null;
+      const precip = precipArr ? precipArr[i] : null;
+      const tempTxt = tempC!=null ? Math.round(tempC*9/5+32)+'\u00B0' : 'N/A';
+      const precipTxt = precip!=null ? precip.toFixed(1) : 'N/A';
+      const flagged = (precip!=null && maxPrecip>0.1 && precip < maxPrecip*0.3);
+      const flagStyle = flagged ? 'background:rgba(239,68,68,0.22)' : '';
+      html += `<td style="padding:6px 8px;border:1px solid #374151;text-align:center">${tempTxt}</td><td style="padding:6px 8px;border:1px solid #374151;text-align:center;${flagStyle}">${precipTxt}</td>`;
+    });
+    html += '</tr>';
+  }
+  html += '</table>';
+  inner.innerHTML = html;
+}
+
 function showQuickListEditor(){
   allowNaturalOrientation();
   let locations=readSavedLocations().map(loc=>({...loc}));
@@ -1949,6 +2045,16 @@ function setupRangeButtonLongPress(){
 function toggleTheme(){ isDark=!isDark; localStorage.setItem('PEVcast-dark-mode', JSON.stringify(isDark)); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); updateChromeForTheme(); if(currentDataset) buildChart(currentDataset); updateVersionChip(); }
 function toggleWindSpeedLine(){ WIND_SPEED_LINE_ENABLED=!WIND_SPEED_LINE_ENABLED; localStorage.setItem(WIND_SPEED_LINE_STORAGE_KEY, JSON.stringify(WIND_SPEED_LINE_ENABLED)); WIND_DISPLAY_MODE=WIND_SPEED_LINE_ENABLED?'line':'off'; if(currentDataset) buildChart(currentDataset); }
 async function toggleAirQualityIndex(){ AIR_QUALITY_INDEX_ENABLED=!AIR_QUALITY_INDEX_ENABLED; localStorage.setItem(AIR_QUALITY_INDEX_STORAGE_KEY, JSON.stringify(AIR_QUALITY_INDEX_ENABLED)); if(!currentDataset) return; if(AIR_QUALITY_INDEX_ENABLED && currentLocationLat!=null && currentLocationLon!=null && !currentDataset.hourly?.some(h=>h.airQualityIndex!=null) && !TEST_MODE_ENABLED){ try{ const data=await loadWeatherData(currentCityName || $('cityTitle')?.textContent || 'Current Location', currentLocationLat, currentLocationLon, pastDays); currentDataset=data; buildChart(data); return; }catch(e){ console.warn('Failed to reload AQI data:', e); await showAlertDialog('Air Quality Index was enabled, but AQI data could not be loaded right now.'); } } buildChart(currentDataset); }
+async function setWeatherModel(value){
+  if(!WEATHER_MODEL_OPTIONS.some(o=>o.value===value) || value===WEATHER_MODEL) return;
+  WEATHER_MODEL = value;
+  localStorage.setItem(WEATHER_MODEL_STORAGE_KEY, value);
+  if(TEST_MODE_ENABLED || currentLocationLat==null || currentLocationLon==null) return;
+  try{
+    const data = await loadWeatherData(currentCityName || $('cityTitle')?.textContent || 'Current Location', currentLocationLat, currentLocationLon, pastDays);
+    currentDataset = data; buildChart(data);
+  }catch(e){ console.warn('Failed to reload forecast for selected model:', e); await showAlertDialog(e?.message || 'Failed to load forecast for the selected weather model.'); }
+}
 function toggleTestMode(){ TEST_MODE_ENABLED=!TEST_MODE_ENABLED; const el=$("testModeBanner"); if(el) el.classList.toggle('hidden', !TEST_MODE_ENABLED); const fallback=readSavedLocations()[0] || normalizeLocation({name:'Moon Township, PA', ...QUICK_SELECT_CITIES['Moon Township, PA']}); const name=currentCityName||fallback.name; const coords=(currentLocationLat!=null&&currentLocationLon!=null)?{lat:currentLocationLat,lon:currentLocationLon}:fallback; loadCityByName(name, coords).catch(e=> showAlertDialog(e?.message||'Failed to load in Test Mode.')); updateVersionChip(); }
 function toggleRange(){
   pastDays = 0;
@@ -2294,7 +2400,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.75`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.76`; } catch(e){ console.warn(e); }
   
   installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
@@ -2315,6 +2421,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
   $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
+  $("skyDiff2Btn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/SkyDiff2/', '_blank', 'noopener,noreferrer'); });
   $("airNowBtn")?.addEventListener("click", openAirNowMap);
   $("snapshotBtn")?.addEventListener("click", ()=> showSnapshotScopeDialog());
 
@@ -2403,6 +2510,64 @@ async function showRevisionLogDialog(){
     if(content) content.innerHTML=`<p style="margin:0;color:${isDark?'#fecaca':'#7f1d1d'}">Unable to load the revision log right now.</p><p style="margin:8px 0 0 0;opacity:0.75">${formatRevisionMarkdownInline(e?.message||'Unknown error')}</p>`;
   }
 }
+// Static descriptions for the Weather Sources dialog; kept separate from WEATHER_MODEL_OPTIONS (menu labels stay short).
+const WEATHER_MODEL_DETAILS = {
+  best_match: { agency:'Open-Meteo', coverage:'Global', detail:'Automatically blends the best available high-resolution model for each location. This is the default and what most users should leave selected.' },
+  gfs_seamless: { agency:'NOAA (USA)', coverage:'Global, with hourly HRRR refresh over the US/Canada', detail:'Global Forecast System combined with the rapid-refresh HRRR model. ~13 km resolution globally, ~3 km over North America. Updated every 6 hours (HRRR hourly).' },
+  ecmwf_ifs025: { agency:'ECMWF (European Union)', coverage:'Global', detail:'European Centre for Medium-Range Weather Forecasts IFS model at 0.25\u00b0 (~25 km) resolution. Widely regarded as one of the most accurate global models. Updated every 6 hours.' },
+  icon_seamless: { agency:'DWD (Germany)', coverage:'Global, Europe, and Central Europe', detail:'Deutscher Wetterdienst ICON model, blending global (~11 km), European (~7 km), and Central European D2 (~2 km) domains. Updated every 3-6 hours.' }
+};
+
+async function showWeatherSourcesDialog(){
+  let backdrop=document.getElementById('weatherSourcesBackdrop');
+  if(!backdrop){
+    backdrop=document.createElement('div');
+    backdrop.id='weatherSourcesBackdrop';
+    Object.assign(backdrop.style,{position:'fixed',inset:'0',background:'rgba(0,0,0,0.55)',zIndex:'5100',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'});
+    const dialog=document.createElement('div');
+    Object.assign(dialog.style,{background:isDark?'#111827':'#ffffff',color:isDark?'#e5e7eb':'#111827',borderRadius:'12px',width:'min(640px,100%)',maxHeight:'86vh',display:'flex',flexDirection:'column',boxShadow:'0 10px 40px rgba(0,0,0,0.35)',border:`1px solid ${isDark?'#374151':'#d1d5db'}`});
+    dialog.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid ${isDark?'#374151':'#e5e7eb'}">
+        <h2 style="margin:0;font-size:1.1rem">Weather Data Sources</h2>
+        <button id="weatherSourcesClose" style="height:30px;width:34px;border-radius:6px;border:1px solid ${isDark?'#374151':'#d1d5db'};background:transparent;color:inherit;cursor:pointer">x</button>
+      </div>
+      <div id="weatherSourcesContent" style="padding:14px 18px;overflow:auto;font-size:0.92rem;line-height:1.45"></div>`;
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+    document.getElementById('weatherSourcesClose').addEventListener('click', ()=>backdrop.remove());
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) backdrop.remove(); });
+  }
+  const content=document.getElementById('weatherSourcesContent');
+  if(content){
+    const linkStyle='color:#3b82f6;text-decoration:none';
+    const modelItems = WEATHER_MODEL_OPTIONS.map(o=>{
+      const info = WEATHER_MODEL_DETAILS[o.value] || {};
+      const active = o.value===WEATHER_MODEL ? ` <span style="font-size:0.75rem;padding:1px 6px;border-radius:10px;background:${isDark?'#134e4a':'#ccfbf1'};color:${isDark?'#5eead4':'#0f766e'}">current</span>` : '';
+      return `<li style="margin:10px 0">
+        <div style="font-weight:600">${escapeHtml(o.label)}${active}</div>
+        <div style="opacity:0.75;font-size:0.85rem">${escapeHtml(info.agency||'')}${info.coverage?' &middot; '+escapeHtml(info.coverage):''}</div>
+        <div style="margin-top:2px">${escapeHtml(info.detail||'')}</div>
+      </li>`;
+    }).join('');
+    content.innerHTML = `
+      <p style="margin:0 0 10px 0;opacity:0.85">PEVcast gets its forecast, air quality, and location data from the following public weather services. Forecast model can be changed under Menu &rarr; Forecast Source, and the Compare Models tool cross-checks all forecast models at once.</p>
+      <p style="margin:0 0 6px 0;font-weight:700">Forecast Models (<a href="https://open-meteo.com/" target="_blank" style="${linkStyle}">Open-Meteo</a>)</p>
+      <ul style="margin:0 0 14px 0;padding-left:18px;list-style:disc">${modelItems}</ul>
+      <p style="margin:0 0 6px 0;font-weight:700">Air Quality</p>
+      <ul style="margin:0 0 14px 0;padding-left:18px;list-style:disc">
+        <li style="margin:6px 0"><a href="https://docs.airnowapi.org/" target="_blank" style="${linkStyle}">AirNow</a> &mdash; primary US observed AQI (falls back automatically if unavailable or stale)</li>
+        <li style="margin:6px 0"><a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" style="${linkStyle}">Open-Meteo Air Quality</a> &mdash; forecast/model AQI and fallback outside AirNow coverage</li>
+      </ul>
+      <p style="margin:0 0 6px 0;font-weight:700">Location &amp; Radar</p>
+      <ul style="margin:0 0 4px 0;padding-left:18px;list-style:disc">
+        <li style="margin:6px 0"><a href="https://open-meteo.com/en/docs/geocoding-api" target="_blank" style="${linkStyle}">Open-Meteo Geocoding</a> &mdash; city search</li>
+        <li style="margin:6px 0"><a href="https://www.bigdatacloud.com/" target="_blank" style="${linkStyle}">BigDataCloud</a> &amp; <a href="https://nominatim.org/" target="_blank" style="${linkStyle}">Nominatim</a> &mdash; reverse geocoding for GPS location names</li>
+        <li style="margin:6px 0"><a href="https://radar.weather.gov/" target="_blank" style="${linkStyle}">NOAA Weather Radar</a> &mdash; live radar imagery</li>
+      </ul>`;
+  }
+  backdrop.style.display='flex';
+}
+
 function allowNaturalOrientation(){
   try{ screen.orientation?.unlock?.(); }catch{}
 }
@@ -2679,6 +2844,7 @@ function showAboutDialog(){
         </ul>
       </div>
       <button id="aboutRevisionLog" style="width:100%; padding:10px; margin-top:12px; border:1px solid #2563eb; background:#2563eb; color:#ffffff; border-radius:6px; cursor:pointer; font-size:0.95rem;">Show Revision Log</button>
+      <button id="aboutWeatherSources" style="width:100%; padding:10px; margin-top:12px; border:1px solid #0f766e; background:${isDark ? '#134e4a' : '#0f766e'}; color:#ffffff; border-radius:6px; cursor:pointer; font-size:0.95rem;">Weather Data Sources</button>
       <button id="aboutClearCache" style="width:100%; padding:10px; margin-top:12px; border:1px solid #7f1d1d; background:#7f1d1d; color:#ffffff; border-radius:6px; cursor:pointer; font-size:0.95rem;">Clear Cache</button>
       <button id="aboutClose" style="width:100%; padding:10px; margin-top:12px; border:1px solid ${isDark ? '#374151' : '#d1d5db'}; background:${isDark ? '#111827' : '#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Close</button>
     `;
@@ -2692,6 +2858,7 @@ function showAboutDialog(){
       }
     });
     document.getElementById('aboutRevisionLog').addEventListener('click', ()=>{ showRevisionLogDialog(); });
+    document.getElementById('aboutWeatherSources').addEventListener('click', ()=>{ showWeatherSourcesDialog(); });
     document.getElementById('aboutClearCache').addEventListener('click', async ()=>{
       const message=[
         'Clear all saved PEVcast settings from local storage?',
@@ -2863,6 +3030,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

@@ -2,6 +2,19 @@
 
 ---
 
+## 7.12.76 - 2026-08-08
+
+### Menu and Dialogs
+- Added a "Forecast Source" section to the app menu to switch the active weather model between Auto (Best Match), GFS (NOAA), ECMWF IFS, and ICON (DWD).
+- Added a "Compare Models" dialog showing temperature and precipitation from all four models side-by-side for the next ~36 hours, flagging hours where one model reports much less precipitation than the others.
+- Added a "Weather Data Sources" dialog, linked from About, describing every forecast model, air-quality source, and geocoding/radar source the app uses.
+
+### API
+- `fetchForecastLive` now requests a specific Open-Meteo weather model via `&models=` when one other than Auto/Best Match is selected.
+- Added a model-comparison fetch that requests all supported models in a single Open-Meteo call for the Compare Models dialog.
+
+---
+
 ## 7.12.75 - 2026-08-03
 
 > REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
