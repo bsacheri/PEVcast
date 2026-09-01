@@ -25,7 +25,7 @@
   </script>
   <script src="testdata-2026-01-24.js" defer onload="window.TEST_MODE_DATA_AVAILABLE = true;"></script>
   <script>
-    window.FILE_VERSIONS = { html: '7.12.43', css: '7.12.40', js: '7.12.76' };
+    window.FILE_VERSIONS = { html: '7.12.44', css: '7.12.41', js: '7.12.77' };
   </script>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
@@ -40,9 +40,10 @@
       <select id="quickSelect" class="quick-select" title="Quick Select">
         <option value="" selected>Quick Select</option>
       </select>
-      <div class="search-group">
-        <input id="cityInput" type="text" placeholder="Enter city, ZIP, or coordinates" title="Search by city, ZIP, or coordinates like 40.520, -80.241" />
-        <button id="searchBtn">Search</button>
+      <div id="locationTools" class="location-tools" aria-label="Location tools">
+        <button id="locationSearchBtn" class="location-search-trigger" type="button" title="Search city, town, ZIP code, or coordinates" aria-label="Search location">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        </button>
       </div>
       <select id="snowRatio" class="quick-select" title="Snow ratio">
         <option value="Auto" selected>Snow Ratio: Auto</option>
@@ -146,28 +147,37 @@
     </section>
   </main>
 
-  <div id="matchModal" class="modal hidden">
+  <div id="locationSearchModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="locationSearchTitle" aria-describedby="locationSearchHint">
     <div class="modal-backdrop"></div>
-    <div class="modal-sheet">
-      <h2>Select a location</h2>
-      <p>Multiple matches found. Tap/click the correct one:</p>
-      <ul id="matchList"></ul>
-      <button id="matchCancelBtn" class="modal-cancel">Cancel</button>
+    <div class="location-search-sheet">
+      <div class="location-search-heading">
+        <div>
+          <h2 id="locationSearchTitle">Search for a location</h2>
+          <p id="locationSearchHint">Search by city, town, ZIP code, or coordinates.</p>
+        </div>
+        <button id="locationSearchCloseBtn" class="location-search-close" type="button" aria-label="Close location search" title="Close">&times;</button>
+      </div>
+      <form id="locationSearchForm" class="location-search-form" role="search">
+        <label class="sr-only" for="locationSearchInput">City, town, ZIP code, or coordinates</label>
+        <input id="locationSearchInput" type="search" inputmode="search" autocomplete="off" autocapitalize="words" placeholder="City, town, ZIP code, or coordinates" aria-autocomplete="list" aria-controls="locationSearchList" aria-expanded="false" />
+        <button id="locationSearchClearBtn" class="location-search-clear" type="button" aria-label="Clear location search" title="Clear search" hidden>&times;</button>
+      </form>
+      <div id="locationSearchStatus" class="location-search-status" role="status" aria-live="polite">Start typing to search.</div>
+      <ul id="locationSearchList" class="location-search-list" role="listbox" aria-label="Location suggestions"></ul>
+      <button id="locationSearchCancelBtn" class="modal-cancel" type="button">Cancel</button>
     </div>
   </div>
 
   <footer class="app-footer">
-    <div id="fileVersions" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
-      <span id="ver-html">index.html v7.12.43</span>
-      <span>|</span>
-      <span id="ver-css">styles.css v7.12.40</span>
-      <span>|</span>
-      <span id="ver-js">app.js v7.12.76</span>
-      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">- Code updated: 08/08/2026 1:54 AM</span>
+    <div id="fileVersions" style="display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px;">
+      <span>PEVcast v7.12.77</span>
+      <span aria-hidden="true">·</span>
+      <span id="lastUpdated" style="font-size:0.75rem; opacity:0.7;">Updated Sep 1, 2026 1:47 AM</span>
     </div>
   </footer>
 </body>
 </html>
+
 
 
 

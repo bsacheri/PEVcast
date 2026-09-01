@@ -72,9 +72,8 @@ function Test-VersionConsistency {
   $cacheVersion = Get-CacheVersion -HtmlVersion $versions.html -CssVersion $versions.css -JsVersion $versions.js
 
   $checks = @(
-    @{ Label = 'index.html footer html version'; Pattern = "id=""ver-html"">index\.html v$([regex]::Escape($versions.html))<" ; Text = $IndexHtml }
-    @{ Label = 'index.html footer css version'; Pattern = "id=""ver-css"">styles\.css v$([regex]::Escape($versions.css))<" ; Text = $IndexHtml }
-    @{ Label = 'index.html footer js version'; Pattern = "id=""ver-js"">app\.js v$([regex]::Escape($versions.js))<" ; Text = $IndexHtml }
+    @{ Label = 'index.html footer app version'; Pattern = "PEVcast v$([regex]::Escape($versions.js))" ; Text = $IndexHtml }
+    @{ Label = 'index.html footer update date'; Pattern = 'id="lastUpdated"[^>]*>Updated [^<]+<' ; Text = $IndexHtml }
     @{ Label = 'styles.css header version'; Pattern = "/\* styles\.css @version $([regex]::Escape($versions.css)) \*/" ; Text = $StylesCss }
     @{ Label = 'app.js header version'; Pattern = "(?m)^// app\.js @version $([regex]::Escape($versions.js))\r?$" ; Text = $AppJs }
     @{ Label = 'app.js runtime version'; Pattern = "window\.APP_VERSION='$([regex]::Escape($versions.js))'" ; Text = $AppJs }
@@ -283,6 +282,7 @@ $newCacheVersion = Get-CacheVersion -HtmlVersion $newHtmlVersion -CssVersion $ne
 
 $localNow = Get-Date
 $codeUpdated = $localNow.ToString('MM/dd/yyyy h:mm tt')
+$footerUpdated = $localNow.ToString('MMM d, yyyy h:mm tt', [Globalization.CultureInfo]::GetCultureInfo('en-US'))
 $utcTimestamp = $localNow.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $diffText = Get-ChangedDiffText -Files $candidateFiles -UseWorkingTreeDiff ([bool]$UseWorkingTree)
 $revisionGroups = Get-RevisionLogGroups -Files $candidateFiles -DiffText $diffText
@@ -293,10 +293,8 @@ $releaseNoteText = if ($ReleaseNotes) {
 }
 
 $indexHtml = [regex]::Replace($indexHtml, "window\.FILE_VERSIONS\s*=\s*\{\s*html:\s*'[^']+'\s*,\s*css:\s*'[^']+'\s*,\s*js:\s*'[^']+'\s*\s*\};", "window.FILE_VERSIONS = { html: '$newHtmlVersion', css: '$newCssVersion', js: '$newJsVersion' };")
-$indexHtml = [regex]::Replace($indexHtml, 'id="ver-html">index\.html v[^<]+<', "id=`"ver-html`">index.html v$newHtmlVersion<")
-$indexHtml = [regex]::Replace($indexHtml, 'id="ver-css">styles\.css v[^<]+<', "id=`"ver-css`">styles.css v$newCssVersion<")
-$indexHtml = [regex]::Replace($indexHtml, 'id="ver-js">app\.js v[^<]+<', "id=`"ver-js`">app.js v$newJsVersion<")
-$indexHtml = [regex]::Replace($indexHtml, 'id="lastUpdated"[^>]*>[^<]+<', "id=`"lastUpdated`" style=`"font-size:0.75rem; opacity:0.7;`">- Code updated: $codeUpdated<")
+$indexHtml = [regex]::Replace($indexHtml, 'PEVcast v[^<]+', "PEVcast v$newJsVersion")
+$indexHtml = [regex]::Replace($indexHtml, 'id="lastUpdated"[^>]*>[^<]+<', "id=`"lastUpdated`" style=`"font-size:0.75rem; opacity:0.7;`">Updated $footerUpdated<")
 
 $stylesCss = [regex]::Replace($stylesCss, '/\* styles\.css @version [^*]+\*/', "/* styles.css @version $newCssVersion */")
 

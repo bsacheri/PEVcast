@@ -4,11 +4,11 @@ A weather forecasting dashboard that visualizes hourly and daily weather data wi
 
 -**Reasons I made this app instead of using an existing one**:
   - At a glance have an idea what days are good days for riding my PEV.
-  - See temperature as a line over 14 days. Is there an upcoming day or evening to get exicted about?
+  - During the colder off-season I want to see temperature as a line over 14 days. Is there a warm upcoming day or evening to get exicted about?
   - See the chance of percipitation versus the forecast of accumulation.  Often a day has a high chance of rain but accumulation may only be a short period.  I don't care if I get a little sprinkle as long as I don't go out in a thunderstorm.
   - Wind speed can be a big impact on riding a device with one wheel.  Under 10 MPH is ideal.
   - I like to see an indicator on the chart when freezing is in scope.
-  - Seeing the temperature every hour is too busy.  I just want to see the high and the low for the day.  I can click on the chart to see a tooltip for more granular analysis.
+  - Seeing the temperature number every hour is too busy.  I just want to see the high and the low for the day.  I can click on the chart to see a tooltip for more granular analysis.
   - A gradient on the left side of the screen lets me understand when warm weather is in the forecast.
 
 

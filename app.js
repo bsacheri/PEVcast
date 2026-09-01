@@ -1,4 +1,4 @@
-// app.js @version 7.12.76
+// app.js @version 7.12.77
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -7,12 +7,13 @@
 // - Sunrise/Sunset lines + day/night shading restored (addDayNightBoxesAligned).
 // - Test Mode resolver tolerant of window/globalThis/bare TEST_MODE_DATA and TEST_MODE_DATA_AVAILABLE; test_data.json fallback; no popup if any dataset.
 // - Weather Data modal (columns=hours, rows=metrics) for mapping QA.
-// - GPS dark-mode contrast; right-header reserved space; maximize button; hour ticks; chart data labels for day min/max.
+// - GPS dark-mode contrast; right-header reserved space; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.76'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '08/08/2026 1:54 AM';
-(function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='- Code updated: '+CODE_UPDATED; })();
+(function(){ try{ window.APP_VERSION='7.12.77'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '09/01/2026 1:47 AM';
+function formatFooterUpdatedDate(value){ const d=new Date(value.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')); if(Number.isNaN(d.getTime())) return value; return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+value.split(' ').slice(1).join(' '); }
+(function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='Updated '+formatFooterUpdatedDate(CODE_UPDATED); })();
 
 function generateCodeUpdateTimestamp(){ const now=new Date(); const mon=String(now.getMonth()+1).padStart(2,'0'); const day=String(now.getDate()).padStart(2,'0'); const yr=now.getFullYear(); let h=now.getHours(); const m=String(now.getMinutes()).padStart(2,'0'); const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12; return `${mon}/${day}/${yr} ${h}:${m} ${ap}`; }
 
@@ -61,6 +62,9 @@ const WEATHER_MODEL_OPTIONS = [
 ];
 let WEATHER_MODEL = WEATHER_MODEL_OPTIONS.some(o => o.value === localStorage.getItem(WEATHER_MODEL_STORAGE_KEY))
   ? localStorage.getItem(WEATHER_MODEL_STORAGE_KEY) : 'best_match';
+function getWeatherModelLabel(){
+  return WEATHER_MODEL_OPTIONS.find(option=>option.value===WEATHER_MODEL)?.label || WEATHER_MODEL;
+}
 const AIRNOW_TIMEOUT_MS = 4500;
 const AIRNOW_STALE_MS = 3 * 60 * 60 * 1000;
 let WIND_DISPLAY_MODE = WIND_SPEED_LINE_ENABLED ? 'line' : 'off'; // 'off' | 'line' | 'barbs' | 'overlay' | 'arrows'
@@ -422,10 +426,230 @@ async function loadWeatherData(cityName, lat, lon, pastDaysParam=0){
 }
 
 // ---------- Open-Meteo live fetch ----------
-async function geocodeCity(query){
+async function geocodeCity(query, signal){
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
-  const res = await fetch(url); if (!res.ok) throw new Error('Geocoding failed');
+  const res = await fetch(url, signal ? {signal} : undefined); if (!res.ok) throw new Error('Geocoding failed');
   const data = await res.json(); return data.results || [];
+}
+
+// ---------- Location Search Dialog ----------
+const LOCATION_SEARCH_ALIASES = {
+  dc: {
+    query: 'Washington, District of Columbia',
+    candidate: { name:'Washington', admin1:'District of Columbia', country:'United States', latitude:38.9072, longitude:-77.0369 }
+  }
+};
+let locationSearchTimer = null;
+let locationSearchAbortController = null;
+let locationSearchRequestId = 0;
+let locationSearchCandidates = [];
+let locationSearchActiveIndex = -1;
+let locationSearchReturnFocus = null;
+
+function getLocationSearchKey(value){
+  return String(value||'').trim().toLocaleLowerCase().replace(/[.,]/g,'').replace(/\s+/g,' ');
+}
+function normalizeLocationSearchQuery(value){
+  const raw = String(value||'').trim().replace(/\s+/g,' ');
+  return LOCATION_SEARCH_ALIASES[getLocationSearchKey(raw)]?.query || raw;
+}
+function makeLocationSearchCandidate(result, options={}){
+  const primary = String(options.primary || result?.name || result?.admin1 || result?.country || 'Unknown location').trim();
+  const contextParts = [options.secondary, result?.admin2, result?.admin1, result?.country]
+    .map(value=>String(value||'').trim())
+    .filter(Boolean)
+    .filter((value, index, list)=>list.findIndex(item=>item.toLocaleLowerCase()===value.toLocaleLowerCase())===index)
+    .filter(value=>value.toLocaleLowerCase()!==primary.toLocaleLowerCase());
+  const latitude = Number(options.latitude ?? result?.latitude);
+  const longitude = Number(options.longitude ?? result?.longitude);
+  return {
+    ...result,
+    primary,
+    secondary: contextParts.join(', '),
+    label: [primary, ...contextParts].join(', '),
+    latitude,
+    longitude,
+    isCoordinate: !!options.isCoordinate,
+    isSaved: !!options.isSaved
+  };
+}
+function getLocationSearchScore(query, candidate){
+  const q = getLocationSearchKey(query);
+  const name = getLocationSearchKey(candidate.primary);
+  const context = getLocationSearchKey(candidate.secondary);
+  if(q==='dc' && name==='washington' && context.includes('district of columbia')) return 1200;
+  if(name===q) return 1000;
+  if(name.startsWith(q)) return 850;
+  if(name.includes(q)) return 700;
+  if(context.includes(q)) return 500;
+  const tokens = q.split(' ').filter(Boolean);
+  return tokens.length && tokens.every(token=>`${name} ${context}`.includes(token)) ? 400 : 0;
+}
+function dedupeLocationSearchCandidates(candidates){
+  const seen = new Set();
+  return candidates.filter(candidate=>{
+    if(!Number.isFinite(candidate.latitude) || !Number.isFinite(candidate.longitude)) return false;
+    const key = `${candidate.latitude.toFixed(4)},${candidate.longitude.toFixed(4)}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function getSavedLocationSearchCandidates(){
+  return readSavedLocations().slice(0,8).map(loc=>makeLocationSearchCandidate({}, {
+    primary:loc.name,
+    secondary:'Saved location',
+    latitude:loc.lat,
+    longitude:loc.lon,
+    isSaved:true
+  }));
+}
+function getLocationSearchAliasCandidate(query){
+  const alias = LOCATION_SEARCH_ALIASES[getLocationSearchKey(query)];
+  return alias ? makeLocationSearchCandidate(alias.candidate) : null;
+}
+function renderLocationSearchSuggestions(candidates, statusText){
+  const list = $('locationSearchList');
+  const input = $('locationSearchInput');
+  const status = $('locationSearchStatus');
+  if(!list || !input || !status) return;
+  locationSearchCandidates = dedupeLocationSearchCandidates(candidates).slice(0,8);
+  locationSearchActiveIndex = locationSearchCandidates.length ? 0 : -1;
+  list.innerHTML='';
+  locationSearchCandidates.forEach((candidate, index)=>{
+    const li=document.createElement('li');
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='location-search-option';
+    button.id=`location-search-option-${index}`;
+    button.setAttribute('role','option');
+    button.dataset.index=String(index);
+    const primary=document.createElement('span'); primary.className='location-search-option-primary'; primary.textContent=candidate.primary;
+    const secondary=document.createElement('span'); secondary.className='location-search-option-secondary'; secondary.textContent=candidate.secondary || 'Location';
+    button.append(primary, secondary);
+    button.addEventListener('click', ()=>selectLocationSearchCandidate(candidate));
+    li.appendChild(button); list.appendChild(li);
+  });
+  status.textContent=statusText || (locationSearchCandidates.length ? 'Select a location.' : 'No matches found.');
+  input.setAttribute('aria-expanded', locationSearchCandidates.length ? 'true' : 'false');
+  updateLocationSearchActiveOption();
+}
+function updateLocationSearchActiveOption(){
+  const buttons=document.querySelectorAll('#locationSearchList .location-search-option');
+  buttons.forEach((button,index)=>{
+    const active=index===locationSearchActiveIndex;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  const input=$('locationSearchInput');
+  if(input && locationSearchActiveIndex>=0) input.setAttribute('aria-activedescendant', `location-search-option-${locationSearchActiveIndex}`);
+  else if(input) input.removeAttribute('aria-activedescendant');
+}
+async function runLocationSearch(query, requestId=++locationSearchRequestId){
+  const rawQuery=String(query||'').trim();
+  if(!rawQuery){ renderLocationSearchSuggestions(getSavedLocationSearchCandidates(), 'Recent and saved locations.'); return; }
+  const coords=parseCoordinateSearch(rawQuery);
+  if(coords){
+    renderLocationSearchSuggestions([makeLocationSearchCandidate({}, {primary:`${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`, secondary:'Use coordinates', latitude:coords.lat, longitude:coords.lon, isCoordinate:true})], 'Coordinate location.');
+    return;
+  }
+  if(rawQuery.length<2){ renderLocationSearchSuggestions([], 'Type at least 2 characters.'); return; }
+  if(locationSearchAbortController) locationSearchAbortController.abort();
+  locationSearchAbortController=new AbortController();
+  const aliasCandidate=getLocationSearchAliasCandidate(rawQuery);
+  if(aliasCandidate) renderLocationSearchSuggestions([aliasCandidate], 'Searching for matching locations…');
+  else renderLocationSearchSuggestions([], 'Searching…');
+  try{
+    const results=await geocodeCity(normalizeLocationSearchQuery(rawQuery), locationSearchAbortController.signal);
+    if(requestId!==locationSearchRequestId) return;
+    const candidates=(aliasCandidate ? [aliasCandidate] : []).concat(results.map(result=>makeLocationSearchCandidate(result)));
+    candidates.sort((a,b)=>getLocationSearchScore(rawQuery,b)-getLocationSearchScore(rawQuery,a));
+    renderLocationSearchSuggestions(candidates, candidates.length ? 'Select a location.' : 'No matches found.');
+  }catch(error){
+    if(error?.name==='AbortError' || requestId!==locationSearchRequestId) return;
+    renderLocationSearchSuggestions(aliasCandidate ? [aliasCandidate] : [], aliasCandidate ? 'Select a location.' : 'Search is unavailable. Try again.');
+    console.warn('[LocationSearch] Search failed:', error);
+  }
+}
+function scheduleLocationSearch(){
+  const input=$('locationSearchInput'); if(!input) return;
+  if(locationSearchTimer) clearTimeout(locationSearchTimer);
+  locationSearchRequestId++;
+  if(locationSearchAbortController) locationSearchAbortController.abort();
+  const query=input.value;
+  if(!query.trim()){ runLocationSearch(''); return; }
+  locationSearchTimer=setTimeout(()=>runLocationSearch(query), 250);
+}
+function updateLocationSearchViewport(){
+  const modal=$('locationSearchModal'); if(!modal) return;
+  const viewportHeight=window.visualViewport?.height || window.innerHeight;
+  modal.style.setProperty('--location-search-viewport-height', `${Math.round(viewportHeight)}px`);
+}
+function openLocationSearchDialog(){
+  const modal=$('locationSearchModal'), input=$('locationSearchInput');
+  if(!modal || !input) return;
+  locationSearchReturnFocus=document.activeElement;
+  modal.classList.remove('hidden');
+  document.body.classList.add('location-search-open');
+  updateLocationSearchViewport();
+  input.value='';
+  const clear=$('locationSearchClearBtn'); if(clear) clear.hidden=true;
+  renderLocationSearchSuggestions(getSavedLocationSearchCandidates(), 'Recent and saved locations.');
+  setTimeout(()=>{ input.focus(); input.select(); }, 0);
+}
+function closeLocationSearchDialog(){
+  const modal=$('locationSearchModal'); if(!modal) return;
+  if(locationSearchTimer) clearTimeout(locationSearchTimer);
+  if(locationSearchAbortController) locationSearchAbortController.abort();
+  locationSearchTimer=null; locationSearchAbortController=null; locationSearchRequestId++;
+  modal.classList.add('hidden');
+  document.body.classList.remove('location-search-open');
+  const returnFocus=locationSearchReturnFocus; locationSearchReturnFocus=null;
+  if(returnFocus && typeof returnFocus.focus==='function') returnFocus.focus();
+}
+async function selectLocationSearchCandidate(candidate){
+  if(!candidate) return;
+  closeLocationSearchDialog();
+  showLocationLoading('Loading forecast…');
+  try{
+    if(candidate.isCoordinate) await loadCoordinatesLocation(candidate.latitude, candidate.longitude, false);
+    else await loadCityByName(candidate.label, {lat:candidate.latitude, lon:candidate.longitude});
+    const qs=$('quickSelect'); if(qs) qs.value='';
+  }finally{
+    hideLocationLoading();
+  }
+}
+function handleLocationSearchKeydown(event){
+  if(event.key==='Escape'){ event.preventDefault(); closeLocationSearchDialog(); return; }
+  if(event.key==='ArrowDown' && locationSearchCandidates.length){ event.preventDefault(); locationSearchActiveIndex=(locationSearchActiveIndex+1)%locationSearchCandidates.length; updateLocationSearchActiveOption(); return; }
+  if(event.key==='ArrowUp' && locationSearchCandidates.length){ event.preventDefault(); locationSearchActiveIndex=(locationSearchActiveIndex-1+locationSearchCandidates.length)%locationSearchCandidates.length; updateLocationSearchActiveOption(); return; }
+  if(event.key==='Enter'){
+    event.preventDefault();
+    if(locationSearchCandidates[locationSearchActiveIndex]) selectLocationSearchCandidate(locationSearchCandidates[locationSearchActiveIndex]);
+    else runLocationSearch($('locationSearchInput')?.value||'');
+  }
+}
+function initLocationSearch(){
+  const modal=$('locationSearchModal'), input=$('locationSearchInput');
+  if(!modal || !input) return;
+  $('locationSearchBtn')?.addEventListener('click', openLocationSearchDialog);
+  $('locationSearchCloseBtn')?.addEventListener('click', closeLocationSearchDialog);
+  $('locationSearchCancelBtn')?.addEventListener('click', closeLocationSearchDialog);
+  $('locationSearchClearBtn')?.addEventListener('click', ()=>{ input.value=''; input.focus(); runLocationSearch(''); });
+  input.addEventListener('input', ()=>{
+    const clear=$('locationSearchClearBtn'); if(clear) clear.hidden=!input.value;
+    locationSearchCandidates=[];
+    locationSearchActiveIndex=-1;
+    input.setAttribute('aria-expanded','false');
+    input.removeAttribute('aria-activedescendant');
+    const list=$('locationSearchList'); if(list) list.innerHTML='';
+    scheduleLocationSearch();
+  });
+  input.addEventListener('keydown', handleLocationSearchKeydown);
+  $('locationSearchForm')?.addEventListener('submit', event=>{ event.preventDefault(); handleLocationSearchKeydown({key:'Enter', preventDefault:()=>{}}); });
+  modal.querySelector('.modal-backdrop')?.addEventListener('click', closeLocationSearchDialog);
+  window.visualViewport?.addEventListener('resize', updateLocationSearchViewport);
+  window.visualViewport?.addEventListener('scroll', updateLocationSearchViewport);
 }
 async function fetchForecastLive(lat, lon, pastDaysParam=0, model=WEATHER_MODEL){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
@@ -859,7 +1083,7 @@ function findCurrentOrPreviousHourIndex(labels, now=Date.now()){ if(!labels||!la
 function getCurrentTimePosition(labels, now=Date.now()){ if(!labels||!labels.length) return null; const times=labels.map(labelTimeMs); for(let i=0;i<times.length;i++){ const ms=times[i]; if(ms==null) continue; if(now===ms) return i; if(now<ms){ if(i===0) return null; const prev=times[i-1]; if(prev==null || ms<=prev) return i-1; return (i-1)+((now-prev)/(ms-prev)); } } return null; }
 function findNowIndex(labels){ return findCurrentOrPreviousHourIndex(labels); }
 
-function updateSunTimesForNow(daily, fullLabels, nowIdxFull, fetchedAt){ try{ const el=$("sunTimes"); if(!el||!daily||!daily.length||!fullLabels||nowIdxFull==null) return; const dayKey=fullLabels[nowIdxFull].substring(0,10); const rec=daily.find(d=>d.date===dayKey) || daily[0]; const fetchedText = fetchedAt ? formatClock(fetchedAt) : "n/a"; el.textContent=`Forecast Updated: ${fetchedText} | Sunrise: ${formatClock(rec?.sunrise)} | Sunset: ${formatClock(rec?.sunset)}`; }catch(e){ console.warn("updateSunTimesForNow failed", e); } }
+function updateSunTimesForNow(daily, fullLabels, nowIdxFull, fetchedAt){ try{ const el=$("sunTimes"); if(!el||!daily||!daily.length||!fullLabels||nowIdxFull==null) return; const dayKey=fullLabels[nowIdxFull].substring(0,10); const rec=daily.find(d=>d.date===dayKey) || daily[0]; const fetchedText = fetchedAt ? formatClock(fetchedAt) : "n/a"; el.textContent=`Forecast Retrieved: ${fetchedText} | Sunrise: ${formatClock(rec?.sunrise)} | Sunset: ${formatClock(rec?.sunset)}`; }catch(e){ console.warn("updateSunTimesForNow failed", e); } }
 
 function calcDayAccum(hourly, idx){ const d=hourly[idx].time.substring(0,10); let sumLiquid=0, sumEstSnow=0; for(let i=0;i<=idx;i++){ if(hourly[i].time.substring(0,10)!==d) continue; const h=hourly[i]; sumLiquid += h.precipIn||0; const likely=(h.precipType==='snow')||(h.temperatureF<=32); if(likely){ const ratio=getSnowRatio(h.temperatureF); sumEstSnow += (h.precipIn||0)*ratio; } } return {liquid:sumLiquid, estSnow:sumEstSnow}; }
 
@@ -1361,7 +1585,7 @@ function ensureAppMenu(){
   if($("appMenuBtn")) return;
   ensureButtonContainer();
   const btn = document.createElement('button'); btn.id='appMenuBtn'; btn.textContent='☰ Menu';
-  Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
+  Object.assign(btn.style,{position:'static',height:'34px',minHeight:'34px',boxSizing:'border-box',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)'});
 
   const panel=document.createElement('div'); panel.id='appMenuPanel';
   Object.assign(panel.style,{position:'fixed',right:'16px',top:'56px',zIndex:'2999',minWidth:'274px',padding:'10px',borderRadius:'8px',border:'1px solid #374151',background:'rgba(17,24,39,0.95)',color:'#e5e7eb',display:'none',boxSizing:'border-box'});
@@ -1484,8 +1708,8 @@ function closeTransientSurfaceForBack(){
   if(isVisibleOverlay(dataModal)){ dataModal.style.display='none'; closed=true; }
   const quickListModal=$("quickListEditorModal");
   if(isVisibleOverlay(quickListModal)){ quickListModal.style.display='none'; closed=true; }
-  const matchModal=$("matchModal");
-  if(isVisibleOverlay(matchModal)){ matchModal.classList.add('hidden'); closed=true; }
+  const locationSearchModal=$("locationSearchModal");
+  if(isVisibleOverlay(locationSearchModal)){ closeLocationSearchDialog(); closed=true; }
   const revisionLogBackdrop=$("revisionLogBackdrop");
   if(isVisibleOverlay(revisionLogBackdrop)){ revisionLogBackdrop.remove(); closed=true; }
   const aboutBackdrop=$("aboutBackdrop");
@@ -2145,28 +2369,12 @@ function openAirNowMap(){
   window.open(buildAirNowMapUrl(currentLocationLat, currentLocationLon), '_blank', 'noopener,noreferrer');
 }
 async function loadCityByName(cityName, coords){ try{ lastClickedIndex=null; lastClickedTime=null; const data=await loadWeatherData(cityName, coords.lat, coords.lon, pastDays); currentCityName=cityName; currentLocationLat=coords.lat; currentLocationLon=coords.lon; setCityTitle(cityName); const host=$("statusLine"); const sv = host ? host.querySelector('.summary-value') : null; if (sv){ sv.textContent = "Click a point on the chart..."; } currentDataset=data; buildChart(data); } catch(e){ console.error(e); await showAlertDialog(e?.message || 'Failed to load weather data.'); } }
-async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs ? qs.value : null; if(!id) return; const loc=findSavedLocationById(id); if(!loc) return; const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; await loadCityByName(loc.name, loc); if(qs) qs.value=''; }
+async function handleQuickSelectChange(){ const qs=$("quickSelect"); const id=qs ? qs.value : null; if(!id) return; const loc=findSavedLocationById(id); if(!loc) return; await loadCityByName(loc.name, loc); if(qs) qs.value=''; }
 
-function installMaximizeStyles(){ if(document.getElementById('maximizeStyles')) return; const s=document.createElement('style'); s.id='maximizeStyles'; s.textContent = `
-  body.maximized .app-header, body.maximized .summary-box, body.maximized .app-footer, body.maximized #testModeBanner, body.maximized #statusLine, body.maximized #matchModal, body.maximized #versionChip { display: none !important; }
-  body.maximized .compare-action { display: none !important; }
-  body.maximized .app-main { padding: 0 !important; }
-  body.maximized .chart-container { position: fixed !important; inset: 0 !important; z-index: 999 !important; height: 100vh !important; }
-  body.maximized #scrollScaleControlContainer { position: fixed !important; left: 12px !important; right: 12px !important; top: 58px !important; z-index: 3001 !important; margin: 0 !important; box-sizing: border-box !important; backdrop-filter: blur(6px); }
-  body.maximized .chart-container { padding-top: 76px !important; }
-  @media (max-width: 640px) {
-    body.maximized #scrollScaleControlContainer { top: 58px !important; }
-    body.maximized .chart-container { padding-top: 82px !important; }
-  }
-`; document.head.appendChild(s); }
+// ---------- Button Container (holds Range + Menu side-by-side) ----------
+function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'6px',top:'12px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
 
-// ---------- Button Container (holds Maximize + Menu side-by-side) ----------
-function ensureButtonContainer(){ if(document.getElementById('btnContainer')) return; const c=document.createElement('div'); c.id='btnContainer'; Object.assign(c.style,{position:'fixed',right:'6px',top:'16px',zIndex:'3000',display:'flex',gap:'8px',alignItems:'center'}); document.body.appendChild(c); }
-
-function ensureRangeButton(){ const btn=$("rangeToggle"); if(!btn || btn.parentElement?.id==='btnContainer') return; ensureButtonContainer(); const container=document.getElementById('btnContainer'); Object.assign(btn.style,{position:'static',height:'32px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)',fontSize:'0.85rem'}); container.appendChild(btn); }
-
-function ensureMaximizeUI(){ if(document.getElementById('chartMaxBtn')) return; ensureButtonContainer(); const b=document.createElement('button'); b.id='chartMaxBtn'; b.title='Maximize'; b.textContent='⛶'; Object.assign(b.style,{position:'static',width:'32px',height:'32px',display:'inline-flex',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:'rgba(31,41,55,0.75)',color:'#f9fafb',border:'1px solid rgba(255,255,255,0.18)',backdropFilter:'blur(6px)',cursor:'pointer',userSelect:'none'}); b.addEventListener('click', ()=>{ const m=document.body.classList.toggle('maximized'); b.textContent = m ? '🗗' : '⛶'; const refresh=()=>{ try{ if(chart?.data?.labels) applyLayout(chart.data.labels); resizeChartForCurrentLayout(); DomColorBar.render(chart); SeparateColorBar.render(chart); StickyYAxisOverlay.render(chart); }catch{} }; refresh(); requestAnimationFrame(refresh); }); document.getElementById('btnContainer').appendChild(b); }
-
+function ensureRangeButton(){ const btn=$("rangeToggle"); if(!btn || btn.parentElement?.id==='btnContainer') return; ensureButtonContainer(); const container=document.getElementById('btnContainer'); Object.assign(btn.style,{position:'static',height:'34px',minHeight:'34px',boxSizing:'border-box',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.18)',background:'rgba(31,41,55,0.75)',color:'#f9fafb',padding:'0 10px',cursor:'pointer',backdropFilter:'blur(6px)',fontSize:'0.85rem'}); container.appendChild(btn); }
 
 
 // ---------- Reverse Geocoding ----------
@@ -2264,7 +2472,37 @@ async function reverseGeocode(lat, lon){
 // ---------- Quick Select + GPS ----------
 function populateQuickSelectSorted(){ const select=$("quickSelect"); if(!select) return; for (let i = select.options.length - 1; i >= 1; i--) select.remove(i); for (const loc of readSavedLocations()){ const opt=document.createElement('option'); opt.value=loc.id; opt.textContent=loc.name; select.appendChild(opt); } }
 
-function ensureGPSButton(){ const qs=$("quickSelect"); if(!qs || $("gpsBtn")) return; const btn=document.createElement('button'); btn.id='gpsBtn'; btn.textContent='Use GPS'; btn.title='Use device location'; btn.style.marginLeft='6px'; btn.style.padding='4px 8px'; btn.style.borderRadius='6px'; btn.style.cursor='pointer'; qs.insertAdjacentElement('afterend', btn); updateChromeForTheme(); btn.addEventListener('click', async()=>{ try{ const cityInput=$("cityInput"); if(cityInput) cityInput.value=''; showLocationLoading('Resolving GPS location...'); await loadGpsLocation(false); }catch(err){ if(!isGpsCancelError(err)) await showAlertDialog('Unable to get location: '+(err?.message||'Unknown error')); } finally { hideLocationLoading(); } }); }
+function ensureGPSButton(){
+  const qs=$("quickSelect");
+  if(!qs || $("gpsBtn")) return;
+  const btn=document.createElement('button');
+  btn.id='gpsBtn';
+  btn.title='Use device location';
+  btn.setAttribute('aria-label', 'Use GPS');
+  btn.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13.5 6.5 3.5-3.5 4 4-3.5 3.5"/><path d="m6.5 13.5-3.5 3.5 4 4 3.5-3.5"/><path d="m7 7 10 10"/><path d="M3 3v5h5"/><path d="M21 21v-5h-5"/></svg><span>Use GPS</span>';
+  btn.style.height='34px';
+  btn.style.minHeight='34px';
+  btn.style.boxSizing='border-box';
+  btn.style.display='inline-flex';
+  btn.style.alignItems='center';
+  btn.style.justifyContent='center';
+  btn.style.gap='5px';
+  btn.style.padding='0 8px';
+  btn.style.borderRadius='6px';
+  btn.style.cursor='pointer';
+  qs.insertAdjacentElement('afterend', btn);
+  updateChromeForTheme();
+  btn.addEventListener('click', async()=>{
+    try{
+      showLocationLoading('Resolving GPS location...');
+      await loadGpsLocation(false);
+    }catch(err){
+      if(!isGpsCancelError(err)) await showAlertDialog('Unable to get location: '+(err?.message||'Unknown error'));
+    }finally{
+      hideLocationLoading();
+    }
+  });
+}
 
 // ---------- Version chip (Test Mode) ----------
 function updateVersionChip(){
@@ -2333,8 +2571,52 @@ function hideUpdateBanner(){
 
 function reloadForUpdate(){
   console.log('[Update] Reloading for update...');
-  // Skip service worker cache bypass - reload normally so SW can serve updated assets
-  window.location.reload(true); // Hard reload to bypass cache
+  if(!swRegistration){
+    window.location.reload();
+    return;
+  }
+  const waitForWaitingWorker = () => {
+    if(swRegistration.waiting) return Promise.resolve(swRegistration.waiting);
+    return new Promise((resolve, reject)=>{
+      const timeout = setTimeout(()=>{
+        cleanup();
+        reject(new Error('Timed out waiting for the updated service worker.'));
+      }, 15000);
+      const cleanup = () => {
+        clearTimeout(timeout);
+        swRegistration.removeEventListener('updatefound', onUpdateFound);
+      };
+      const onUpdateFound = () => {
+        const installingWorker = swRegistration.installing;
+        if(!installingWorker) return;
+        installingWorker.addEventListener('statechange', () => {
+          if(installingWorker.state === 'installed' && swRegistration.waiting){
+            cleanup();
+            resolve(swRegistration.waiting);
+          }
+        });
+      };
+      swRegistration.addEventListener('updatefound', onUpdateFound);
+      onUpdateFound();
+    });
+  };
+
+  swRegistration.update()
+    .then(()=>waitForWaitingWorker())
+    .then(waitingWorker=>{
+      if(!waitingWorker){
+        window.location.reload();
+        return;
+      }
+      return new Promise(resolve=>{
+        navigator.serviceWorker.addEventListener('controllerchange', ()=>resolve(), { once:true });
+        waitingWorker.postMessage({ type:'SKIP_WAITING' });
+      }).then(()=>window.location.reload());
+    })
+    .catch(e=>{
+      console.warn('[Update] Failed to activate updated service worker before reload:', e);
+      window.location.reload();
+    });
 }
 
 function getMoonTownshipFallback(){
@@ -2400,10 +2682,10 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.76`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.77`; } catch(e){ console.warn(e); }
   
-  installMaximizeStyles(); ensureMaximizeUI(); ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
-  populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip();
+  ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
+  populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip(); initLocationSearch();
   // Apply saved UI defaults (range & visible hours) if present
   try{ applyDefaultUISettings(); updateRangeButtonLabel(); }catch(e){ console.warn('Failed to apply default UI settings', e); }
   
@@ -2412,13 +2694,11 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   $("updateDismissBtn")?.addEventListener("click", hideUpdateBanner);
 
   $("quickSelect")?.addEventListener("change", handleQuickSelectChange);
-  $("searchBtn")?.addEventListener("click", async ()=>{ const q=$("cityInput")?.value?.trim(); if(!q) return; try{ const coords=parseCoordinateSearch(q); if(coords){ await loadCoordinatesLocation(coords.lat, coords.lon, false); const qs=$("quickSelect"); if(qs) qs.value=''; return; } const results=await geocodeCity(q); if(results.length===0){ await showAlertDialog('No matches found.'); return;} if(results.length===1){ const r=results[0]; const name=`${r.name}, ${r.admin1 || r.country}`; await loadCityByName(name, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; return;} const modal=$("matchModal"), list=$("matchList"); if(!modal||!list) return; list.innerHTML=''; results.forEach(r=>{ const li=document.createElement('li'); const label=`${r.name}, ${r.admin1 || r.country}`; li.textContent=label; li.addEventListener('click', async()=>{ modal.classList.add('hidden'); await loadCityByName(label, {lat:r.latitude, lon:r.longitude}); const qs=$("quickSelect"); if(qs) qs.value=''; }); list.appendChild(li); }); $("matchCancelBtn").onclick=()=> modal.classList.add('hidden'); modal.classList.remove('hidden'); }catch(e){ console.error(e); await showAlertDialog('Search failed.'); } });
   $("themeToggle")?.addEventListener("click", toggleTheme);
   $("testModeToggle")?.addEventListener("click", toggleTestMode);
   setupRangeButtonLongPress();
   $("rangeToggle")?.setAttribute('title', 'Range: 24h | Long-press for history');
   $("layoutToggle")?.addEventListener("click", toggleLayout);
-  $("cityInput")?.addEventListener("keydown", e=>{ if(e.key==="Enter") $("searchBtn")?.click(); });
   $("chartCompareBtn")?.addEventListener("click", openChartCompare);
   $("skyDiffBtn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/FreeWeatherAPICompare/', '_blank', 'noopener,noreferrer'); });
   $("skyDiff2Btn")?.addEventListener("click", ()=>{ window.open('https://bsacheri.github.io/SkyDiff2/', '_blank', 'noopener,noreferrer'); });
@@ -2595,11 +2875,17 @@ function getChartSnapshotFilename(){
   return `PEVcast-${city || 'forecast'}-${stamp}.png`;
 }
 const SNAPSHOT_SCOPE_KEY = 'PEVcast-snapshot-scope-v1';
+const SNAPSHOT_LEGEND_KEY = 'PEVcast-snapshot-legend-v1';
 function readSnapshotScope(){
   const saved = readStoredJson(SNAPSHOT_SCOPE_KEY);
   return (saved && saved.scope === 'visible') ? 'visible' : 'all';
 }
 function writeSnapshotScope(scope){ writeStoredJson(SNAPSHOT_SCOPE_KEY, { scope }); }
+function readSnapshotShowLegend(){
+  const saved = readStoredJson(SNAPSHOT_LEGEND_KEY);
+  return saved?.showLegend === true;
+}
+function writeSnapshotShowLegend(showLegend){ writeStoredJson(SNAPSHOT_LEGEND_KEY, { showLegend: !!showLegend }); }
 function getRangeShortLabel(){
   if(pastDays > 0) return `-${pastDays}d`;
   const rangeState = RANGE_STATES[rangeIndex];
@@ -2609,7 +2895,101 @@ function getRangeShortLabel(){
   if(rangeState === 'max') return '15d';
   return `${rangeState}h`;
 }
-async function buildChartSnapshotBlob(scope = 'all'){
+function getSnapshotLegendEntries(){
+  if(!chart?.data?.datasets) return [];
+  const aqiColors = ['#22c55e','#eab308','#f97316','#ef4444','#8b5cf6','#7f1d1d'];
+  return chart.data.datasets.map((dataset, index)=>{
+    const visible = typeof chart.isDatasetVisible === 'function'
+      ? chart.isDatasetVisible(index)
+      : dataset.hidden !== true;
+    if(!visible) return null;
+    let colors = [];
+    if(dataset.label === 'Air Quality Index') colors = aqiColors;
+    else if(dataset.type === 'bar') colors = snapshotColorStrings(dataset.backgroundColor);
+    else colors = snapshotColorStrings(dataset.borderColor);
+    if(!colors.length) colors = ['#6b7280'];
+    return {
+      label: dataset.label || 'Data',
+      type: dataset.type === 'bar' ? 'bar' : 'line',
+      colors: colors.slice(0, 6),
+      dash: Array.isArray(dataset.borderDash) ? dataset.borderDash : []
+    };
+  }).filter(Boolean);
+}
+function snapshotColorStrings(value){
+  const values = Array.isArray(value) ? value : [value];
+  return [...new Set(values.filter(color=>typeof color === 'string' && color.trim()).map(color=>color.trim()))];
+}
+function getSnapshotLegendLayout(ctx, entries, width, scale){
+  const pad = Math.max(8, Math.round(12 * scale));
+  const titleHeight = Math.round(24 * scale);
+  const rowHeight = Math.round(22 * scale);
+  const swatchWidth = Math.round(20 * scale);
+  const swatchGap = Math.round(6 * scale);
+  const itemGap = Math.round(16 * scale);
+  ctx.font = `${Math.max(9, Math.round(11 * scale))}px system-ui, -apple-system, sans-serif`;
+  const rows = [[]];
+  let rowWidth = 0;
+  entries.forEach(entry=>{
+    const itemWidth = swatchWidth + swatchGap + ctx.measureText(entry.label).width + itemGap;
+    if(rows[rows.length - 1].length && rowWidth + itemWidth > width - pad * 2){
+      rows.push([]);
+      rowWidth = 0;
+    }
+    rows[rows.length - 1].push(entry);
+    rowWidth += itemWidth;
+  });
+  return { pad, titleHeight, rowHeight, swatchWidth, swatchGap, itemGap, rows, height: pad + titleHeight + rows.length * rowHeight + pad };
+}
+function drawSnapshotLegend(ctx, entries, top, width, scale){
+  if(!entries.length) return 0;
+  const layout = getSnapshotLegendLayout(ctx, entries, width, scale);
+  const foreground = isDark ? '#e5e7eb' : '#111827';
+  const muted = isDark ? '#9ca3af' : '#4b5563';
+  ctx.fillStyle = isDark ? '#1f2937' : '#f3f4f6';
+  ctx.fillRect(0, top, width, layout.height);
+  ctx.strokeStyle = isDark ? '#374151' : '#d1d5db';
+  ctx.lineWidth = Math.max(1, scale);
+  ctx.beginPath();
+  ctx.moveTo(0, top + 0.5 * scale);
+  ctx.lineTo(width, top + 0.5 * scale);
+  ctx.stroke();
+  ctx.fillStyle = muted;
+  ctx.font = `${Math.max(9, Math.round(10 * scale))}px system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('Legend', layout.pad, top + layout.pad + layout.titleHeight / 2);
+  ctx.font = `${Math.max(9, Math.round(11 * scale))}px system-ui, -apple-system, sans-serif`;
+  layout.rows.forEach((row, rowIndex)=>{
+    let x = layout.pad;
+    const y = top + layout.pad + layout.titleHeight + rowIndex * layout.rowHeight + layout.rowHeight / 2;
+    row.forEach(entry=>{
+      if(entry.type === 'bar'){
+        const swatchWidth = layout.swatchWidth;
+        const swatchHeight = Math.max(6, Math.round(10 * scale));
+        const segmentWidth = swatchWidth / entry.colors.length;
+        entry.colors.forEach((color, colorIndex)=>{
+          ctx.fillStyle = color;
+          ctx.fillRect(x + colorIndex * segmentWidth, y - swatchHeight / 2, Math.max(1, segmentWidth - scale), swatchHeight);
+        });
+      }else{
+        ctx.strokeStyle = entry.colors[0];
+        ctx.lineWidth = Math.max(2, Math.round(2 * scale));
+        ctx.setLineDash(entry.dash.map(value=>value * scale));
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + layout.swatchWidth, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = foreground;
+      ctx.fillText(entry.label, x + layout.swatchWidth + layout.swatchGap, y);
+      x += layout.swatchWidth + layout.swatchGap + ctx.measureText(entry.label).width + layout.itemGap;
+    });
+  });
+  return layout.height;
+}
+async function buildChartSnapshotBlob(scope = 'all', showLegend = false){
   if(!chart) throw new Error('No chart is loaded yet.');
   const chartDataUrl = chart.toBase64Image('image/png', 1);
   const chartImg = await new Promise((resolve, reject)=>{
@@ -2630,20 +3010,28 @@ async function buildChartSnapshotBlob(scope = 'all'){
     srcX = Math.round(scroller.scrollLeft * scale);
     srcWidth = Math.min(Math.round(scroller.clientWidth * scale), chartImg.width - srcX);
   }
-  const headerHeight = Math.round(56 * scale);
+  const legendEntries = showLegend ? getSnapshotLegendEntries() : [];
+  const headerHeight = Math.round(64 * scale);
+  const outputWidth = leftAxisWidth + srcWidth + rightAxisWidth;
+  const legendLayout = legendEntries.length ? getSnapshotLegendLayout(document.createElement('canvas').getContext('2d'), legendEntries, outputWidth, scale) : null;
+  const legendHeight = legendLayout?.height || 0;
   const canvas = document.createElement('canvas');
-  canvas.width = leftAxisWidth + srcWidth + rightAxisWidth;
-  canvas.height = chartImg.height + headerHeight;
+  canvas.width = outputWidth;
+  canvas.height = chartImg.height + headerHeight + legendHeight;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = isDark ? '#111827' : '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = isDark ? '#e5e7eb' : '#111827';
   ctx.textBaseline = 'middle';
-  ctx.font = `${Math.round(22 * scale)}px system-ui, -apple-system, sans-serif`;
+  const snapshotTitleFont = `${Math.round(22 * scale)}px system-ui, -apple-system, sans-serif`;
+  ctx.font = snapshotTitleFont;
   ctx.fillText($('cityTitle')?.textContent || 'PEVcast Forecast', Math.round(16 * scale), Math.round(headerHeight / 2));
   ctx.textAlign = 'right';
-  ctx.font = `${Math.round(12 * scale)}px system-ui, -apple-system, sans-serif`;
+  ctx.font = snapshotTitleFont;
   ctx.fillText('PEVcast', canvas.width - Math.round(16 * scale), Math.round(headerHeight / 2));
+  ctx.fillStyle = isDark ? '#9ca3af' : '#4b5563';
+  ctx.font = `${Math.max(9, Math.round(11 * scale))}px system-ui, -apple-system, sans-serif`;
+  ctx.fillText(`Model: ${getWeatherModelLabel()}`, canvas.width - Math.round(16 * scale), Math.round(headerHeight / 2 + 19 * scale));
   ctx.textAlign = 'left';
   if(leftAxisCanvas && leftAxisWidth > 0){
     ctx.drawImage(leftAxisCanvas, 0, 0, leftAxisCanvas.width, leftAxisCanvas.height, 0, headerHeight, leftAxisWidth, chartImg.height);
@@ -2652,10 +3040,11 @@ async function buildChartSnapshotBlob(scope = 'all'){
   if(rightAxisCanvas && rightAxisWidth > 0){
     ctx.drawImage(rightAxisCanvas, 0, 0, rightAxisCanvas.width, rightAxisCanvas.height, leftAxisWidth + srcWidth, headerHeight, rightAxisWidth, chartImg.height);
   }
+  if(legendEntries.length) drawSnapshotLegend(ctx, legendEntries, headerHeight + chartImg.height, canvas.width, scale);
   return await new Promise(resolve=> canvas.toBlob(resolve, 'image/png'));
 }
-async function downloadChartSnapshot(scope = 'all'){
-  const blob = await buildChartSnapshotBlob(scope);
+async function downloadChartSnapshot(scope = 'all', showLegend = false){
+  const blob = await buildChartSnapshotBlob(scope, showLegend);
   const filename = getChartSnapshotFilename();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2666,8 +3055,8 @@ async function downloadChartSnapshot(scope = 'all'){
   a.remove();
   setTimeout(()=> URL.revokeObjectURL(url), 1000);
 }
-async function shareChartSnapshot(scope = 'all'){
-  const blob = await buildChartSnapshotBlob(scope);
+async function shareChartSnapshot(scope = 'all', showLegend = false){
+  const blob = await buildChartSnapshotBlob(scope, showLegend);
   const filename = getChartSnapshotFilename();
   const file = new File([blob], filename, { type: 'image/png' });
   if(navigator.canShare?.({ files: [file] })){
@@ -2678,7 +3067,7 @@ async function shareChartSnapshot(scope = 'all'){
       if(err?.name === 'AbortError') return; // user cancelled the share sheet
     }
   }
-  await downloadChartSnapshot(scope); // native sharing unavailable: fall back to a direct save
+  await downloadChartSnapshot(scope, showLegend); // native sharing unavailable: fall back to a direct save
 }
 // ======= Styled dialog helpers (replace native alert/confirm/prompt) =======
 function createDialogBackdrop(){
@@ -2763,6 +3152,7 @@ function showChoiceDialog(message, {title='Choose an option', choices=[]}={}){
 }
 function showSnapshotScopeDialog(){
   let scope = readSnapshotScope();
+  let showLegend = readSnapshotShowLegend();
   document.getElementById('snapshotScopeBackdrop')?.remove();
   const backdrop = document.createElement('div');
   backdrop.id = 'snapshotScopeBackdrop';
@@ -2776,6 +3166,10 @@ function showSnapshotScopeDialog(){
       <button type="button" data-scope="visible" style="flex:1; padding:8px 6px; border:none; cursor:pointer; font-size:0.88rem;">Visible Range</button>
       <button type="button" data-scope="all" style="flex:1; padding:8px 6px; border:none; cursor:pointer; font-size:0.88rem;">All ${getRangeShortLabel()}</button>
     </div>
+    <label for="snapshotShowLegend" style="display:flex; align-items:flex-start; gap:9px; margin:0 0 16px 0; cursor:pointer; line-height:1.35;">
+      <input id="snapshotShowLegend" type="checkbox" style="margin:2px 0 0 0; accent-color:#0d9488;">
+      <span><strong>Show Legend</strong><br><small style="opacity:0.75;">Include the enabled line and bar colors below the chart.</small></span>
+    </label>
     <div style="display:flex; flex-direction:column; gap:8px;">
       <button id="snapshotSaveBtn" style="padding:10px; border:1px solid ${borderColor}; background:${isDark?'#111827':'#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Save</button>
       <button id="snapshotShareBtn" style="padding:10px; border:1px solid ${borderColor}; background:${isDark?'#111827':'#f3f4f6'}; color:inherit; border-radius:6px; cursor:pointer; font-size:0.95rem;">Share</button>
@@ -2783,6 +3177,12 @@ function showSnapshotScopeDialog(){
     </div>`;
   backdrop.appendChild(dialog);
   document.body.appendChild(backdrop);
+  const showLegendInput = dialog.querySelector('#snapshotShowLegend');
+  showLegendInput.checked = showLegend;
+  showLegendInput.addEventListener('change', ()=>{
+    showLegend = showLegendInput.checked;
+    writeSnapshotShowLegend(showLegend);
+  });
 
   const toggleBtns = dialog.querySelectorAll('#snapshotScopeToggle button');
   const paintToggle = ()=> toggleBtns.forEach(btn=>{
@@ -2801,12 +3201,12 @@ function showSnapshotScopeDialog(){
   const close = ()=> backdrop.remove();
   dialog.querySelector('#snapshotSaveBtn').addEventListener('click', async ()=>{
     close();
-    try{ await downloadChartSnapshot(scope); }
+    try{ await downloadChartSnapshot(scope, showLegend); }
     catch(err){ console.error(err); await showAlertDialog(err?.message || 'Unable to save chart snapshot.'); }
   });
   dialog.querySelector('#snapshotShareBtn').addEventListener('click', async ()=>{
     close();
-    try{ await shareChartSnapshot(scope); }
+    try{ await shareChartSnapshot(scope, showLegend); }
     catch(err){ console.error(err); await showAlertDialog(err?.message || 'Unable to share chart snapshot.'); }
   });
   dialog.querySelector('#snapshotCancelBtn').addEventListener('click', close);
@@ -2946,8 +3346,13 @@ btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:non
 btn.style.display = 'inline-flex';
 btn.style.alignItems = 'center';
 btn.style.justifyContent = 'center';
-btn.style.padding = '4px 8px';
-btn.style.marginLeft = '6px';
+btn.style.width = '34px';
+btn.style.height = '34px';
+btn.style.minWidth = '34px';
+btn.style.minHeight = '34px';
+btn.style.boxSizing = 'border-box';
+btn.style.padding = '0';
+btn.style.marginLeft = '0';
 btn.style.borderRadius = '6px';
 btn.style.cursor = 'pointer';
 
@@ -2955,10 +3360,9 @@ btn.style.cursor = 'pointer';
 // document.body.appendChild(btn);
 
 
-  const searchBtn = document.getElementById('searchBtn');
-  const searchGroup = searchBtn ? searchBtn.closest('.search-group') : null;
-  if(searchBtn && searchBtn.parentNode) {
-    searchBtn.insertAdjacentElement('afterend', btn);
+  const locationSearchBtn = document.getElementById('locationSearchBtn');
+  if(locationSearchBtn && locationSearchBtn.parentNode) {
+    locationSearchBtn.insertAdjacentElement('afterend', btn);
   } else {
     document.body.appendChild(btn);
   }
@@ -3030,6 +3434,7 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
 
 
 

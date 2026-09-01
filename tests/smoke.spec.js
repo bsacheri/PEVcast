@@ -10,8 +10,9 @@ test('PEVcast homepage renders the main controls', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'PEVcast' })).toBeVisible();
   await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
   await expect(page.locator('#quickSelect')).toBeVisible();
-  await expect(page.locator('#cityInput')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible();
+  await expect(page.locator('#cityInput')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Search location' })).toBeVisible();
+  await expect(page.locator('#gpsBtn svg')).toBeVisible();
   await expect(page.getByRole('button', { name: /Range:/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Chart Compare' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Menu/ })).toBeVisible();
@@ -22,6 +23,56 @@ test('PEVcast homepage renders the main controls', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Edit Quick List' })).toBeVisible();
 
   expect(pageErrors).toEqual([]);
+});
+
+test('location search opens a focused dialog and returns DC suggestions', async ({ page }) => {
+  await page.route('https://geocoding-api.open-meteo.com/**', async (route) => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get('name') || '';
+    if (query.toLowerCase().includes('washington') || query.toLowerCase().includes('district')) {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [{
+          name: 'Washington',
+          admin1: 'District of Columbia',
+          country: 'United States',
+          latitude: 38.9072,
+          longitude: -77.0369,
+        }] }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/index.html');
+  await page.getByRole('button', { name: 'Search location' }).click();
+
+  await expect(page.locator('#locationSearchModal')).toBeVisible();
+  await expect(page.locator('#locationSearchInput')).toBeFocused();
+  await page.locator('#locationSearchInput').fill('DC');
+  await expect(page.locator('.location-search-option-primary').first()).toHaveText('Washington');
+  await expect(page.locator('.location-search-option-secondary').first()).toContainText('District of Columbia');
+  await expect(page.locator('#locationSearchInput')).toHaveAttribute('aria-expanded', 'true');
+
+  await page.getByRole('button', { name: 'Close location search' }).click();
+  await expect(page.locator('#locationSearchModal')).toBeHidden();
+});
+
+test('mobile location search uses the available visual viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 860 });
+  await page.goto('/index.html');
+  await page.getByRole('button', { name: 'Search location' }).click();
+
+  const layout = await page.evaluate(() => {
+    const sheet = document.querySelector('.location-search-sheet').getBoundingClientRect();
+    const input = document.querySelector('#locationSearchInput').getBoundingClientRect();
+    return { sheetTop: Math.round(sheet.top), sheetHeight: Math.round(sheet.height), inputTop: Math.round(input.top) };
+  });
+
+  expect(layout.sheetTop).toBe(0);
+  expect(layout.sheetHeight).toBeGreaterThan(700);
+  expect(layout.inputTop).toBeGreaterThanOrEqual(12);
 });
 
 test('Android back closes open surfaces before requesting app close', async ({ page }) => {
@@ -240,23 +291,65 @@ test('menu cycles chart between three heights', async ({ page }) => {
   expect(tallAgain).toBeGreaterThanOrEqual(initialTall);
 });
 
-test('maximized mobile hides chart compare and moves visible-hours below buttons', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 860 });
+test('location tools stay grouped and aligned on wide and mobile layouts', async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 760 }, { width: 390, height: 860 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/index.html');
+
+    const layout = await page.evaluate(() => {
+      const ids = ['quickSelect', 'gpsBtn', 'locationSearchBtn', 'radarBtn'];
+      const rects = Object.fromEntries(ids.map((id) => {
+        const rect = document.getElementById(id).getBoundingClientRect();
+        return [id, { top: Math.round(rect.top), height: Math.round(rect.height) }];
+      }));
+      return {
+        rects,
+        sameLocationToolsParent: document.getElementById('locationSearchBtn').parentElement === document.getElementById('radarBtn').parentElement,
+        maximizeButtonCount: document.querySelectorAll('#chartMaxBtn').length,
+      };
+    });
+
+    expect(layout.sameLocationToolsParent).toBe(true);
+    expect(layout.maximizeButtonCount).toBe(0);
+    expect(layout.rects.locationSearchBtn.height).toBe(34);
+    expect(layout.rects.radarBtn.height).toBe(34);
+    expect(layout.rects.locationSearchBtn.top).toBe(layout.rects.radarBtn.top);
+    expect(layout.rects.quickSelect.height).toBe(34);
+    expect(layout.rects.gpsBtn.height).toBe(34);
+  }
+});
+
+test('snapshot dialog offers a persistent legend and adds it to the image', async ({ page }) => {
   await page.goto('/index.html');
-  await expect(page.locator('#mainScrollScaleValue')).toContainText('24h', { timeout: 15000 });
+  await expect(page.locator('#cityTitle')).toContainText('Moon Township, PA');
+  await page.waitForFunction(() => document.getElementById('weatherChart')?.height > 200);
 
-  await page.locator('#chartMaxBtn').click();
+  await page.getByRole('button', { name: 'Save Snapshot' }).click();
+  const legend = page.locator('#snapshotShowLegend');
+  await expect(legend).not.toBeChecked();
+  await legend.check();
+  await page.locator('#snapshotCancelBtn').click();
 
-  await expect(page.locator('.compare-action')).toBeHidden();
-  const layout = await page.evaluate(() => {
-    const buttons = document.getElementById('btnContainer').getBoundingClientRect();
-    const slider = document.getElementById('scrollScaleControlContainer').getBoundingClientRect();
-    return {
-      sliderBelowButtons: slider.top >= buttons.bottom + 4,
-      sliderTop: Math.round(slider.top),
-      buttonBottom: Math.round(buttons.bottom),
+  await page.getByRole('button', { name: 'Save Snapshot' }).click();
+  await expect(page.locator('#snapshotShowLegend')).toBeChecked();
+  await page.locator('#snapshotCancelBtn').click();
+
+  const dimensions = await page.evaluate(async () => {
+    const captured = [];
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+      captured.push({ width: this.width, height: this.height });
+      callback(new Blob(['snapshot'], { type: args[0] || 'image/png' }));
     };
+    try {
+      await window.buildChartSnapshotBlob('all', false);
+      await window.buildChartSnapshotBlob('all', true);
+    } finally {
+      HTMLCanvasElement.prototype.toBlob = originalToBlob;
+    }
+    return captured.slice(-2);
   });
 
-  expect(layout.sliderBelowButtons).toBe(true);
+  expect(dimensions).toHaveLength(2);
+  expect(dimensions[1].height).toBeGreaterThan(dimensions[0].height);
 });
