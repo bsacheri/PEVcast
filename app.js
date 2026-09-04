@@ -1,4 +1,4 @@
-// app.js @version 7.12.77
+// app.js @version 7.12.79
 // Consolidated, verified build restoring ALL agreed features:
 // - Menu: stays open for interactions; closes on outside click and Weather Data only.
 // - Header Snow Ratio removed (#snowRatio and related labels), menu Snow Ratio present (Auto/8/10/12/15) and authoritative via getSnowRatio().
@@ -10,8 +10,8 @@
 // - GPS dark-mode contrast; right-header reserved space; hour ticks; chart data labels for day min/max.
 // - Visible version markers: UI label and console stamp; optional Test Mode footer chip with version.
 
-(function(){ try{ window.APP_VERSION='7.12.77'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
-const CODE_UPDATED = '09/01/2026 1:47 AM';
+(function(){ try{ window.APP_VERSION='7.12.79'; console.info('[WeatherApp] app.js', window.APP_VERSION); }catch(e){} })();
+const CODE_UPDATED = '09/03/2026 9:04 PM';
 function formatFooterUpdatedDate(value){ const d=new Date(value.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$1-$2')); if(Number.isNaN(d.getTime())) return value; return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+value.split(' ').slice(1).join(' '); }
 (function(){ const _lu=document.getElementById('lastUpdated'); if(_lu) _lu.textContent='Updated '+formatFooterUpdatedDate(CODE_UPDATED); })();
 
@@ -58,8 +58,10 @@ const WEATHER_MODEL_OPTIONS = [
   { value: 'best_match', label: 'Auto (Best Match)' },
   { value: 'gfs_seamless', label: 'GFS (NOAA, US)' },
   { value: 'ecmwf_ifs025', label: 'ECMWF IFS (Global)' },
-  { value: 'icon_seamless', label: 'ICON (DWD, Europe)' }
+  { value: 'icon_seamless', label: 'ICON (DWD, Europe)' },
+  { value: 'openweathermap', label: 'OpenWeatherMap' }
 ];
+const WEATHER_MODEL_COMPARISON_OPTIONS = WEATHER_MODEL_OPTIONS.filter(option => !['best_match', 'openweathermap'].includes(option.value));
 let WEATHER_MODEL = WEATHER_MODEL_OPTIONS.some(o => o.value === localStorage.getItem(WEATHER_MODEL_STORAGE_KEY))
   ? localStorage.getItem(WEATHER_MODEL_STORAGE_KEY) : 'best_match';
 function getWeatherModelLabel(){
@@ -425,6 +427,68 @@ async function loadWeatherData(cityName, lat, lon, pastDaysParam=0){
   return buildDataFromLive(apiData, airQualityData);
 }
 
+function getOpenWeatherMapApiKey(){
+  return String(window.PEVCAST_CONFIG?.OPENWEATHERMAP_API_KEY || window.OPENWEATHERMAP_API_KEY || '').trim();
+}
+
+function formatOpenWeatherTime(unixSeconds, timezoneOffsetSeconds){
+  const date = new Date((Number(unixSeconds) + Number(timezoneOffsetSeconds || 0)) * 1000);
+  if(Number.isNaN(date.getTime())) return null;
+  return date.toISOString().substring(0, 16);
+}
+
+function buildDataFromOpenWeatherMap(apiData){
+  const offset = Number(apiData.timezone_offset || 0);
+  const hourly = (apiData.hourly || []).map(hour => {
+    const rainMm = Number(hour.rain?.['1h'] ?? hour.rain?.['3h'] ?? 0);
+    const snowMm = Number(hour.snow?.['1h'] ?? hour.snow?.['3h'] ?? 0);
+    return {
+      time: formatOpenWeatherTime(hour.dt, offset),
+      temperatureC: Number(hour.temp),
+      apparentC: Number(hour.feels_like),
+      precipitationMm: rainMm + snowMm,
+      rainMm,
+      snowMm,
+      windMph: Number(hour.wind_speed) * 2.236936,
+      windDirection: Number(hour.wind_deg),
+      precipitationProbability: hour.pop != null ? Number(hour.pop) * 100 : null
+    };
+  });
+  const daily = (apiData.daily || []).map(day => ({
+    date: formatOpenWeatherTime(day.dt, offset)?.substring(0, 10),
+    highC: Number(day.temp?.max),
+    lowC: Number(day.temp?.min),
+    precipitationMm: Number(day.rain || 0) + Number(day.snow || 0),
+    snowMm: Number(day.snow || 0),
+    sunrise: formatOpenWeatherTime(day.sunrise, offset),
+    sunset: formatOpenWeatherTime(day.sunset, offset)
+  }));
+  return {
+    hourly: {
+      time: hourly.map(hour => hour.time),
+      temperature_2m: hourly.map(hour => hour.temperatureC),
+      apparent_temperature: hourly.map(hour => hour.apparentC),
+      precipitation: hourly.map(hour => hour.precipitationMm),
+      rain: hourly.map(hour => hour.rainMm),
+      snowfall: hourly.map(hour => hour.snowMm),
+      wind_speed_10m: hourly.map(hour => hour.windMph),
+      wind_direction_10m: hourly.map(hour => hour.windDirection),
+      precipitation_probability: hourly.map(hour => hour.precipitationProbability)
+    },
+    daily: {
+      time: daily.map(day => day.date),
+      temperature_2m_max: daily.map(day => day.highC),
+      temperature_2m_min: daily.map(day => day.lowC),
+      precipitation_sum: daily.map(day => day.precipitationMm),
+      snowfall_sum: daily.map(day => day.snowMm),
+      sunrise: daily.map(day => day.sunrise),
+      sunset: daily.map(day => day.sunset)
+    },
+    _fetchedAt: apiData._fetchedAt,
+    generationtime_ms: null
+  };
+}
+
 // ---------- Open-Meteo live fetch ----------
 async function geocodeCity(query, signal){
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
@@ -652,6 +716,17 @@ function initLocationSearch(){
   window.visualViewport?.addEventListener('scroll', updateLocationSearchViewport);
 }
 async function fetchForecastLive(lat, lon, pastDaysParam=0, model=WEATHER_MODEL){
+  if(model === 'openweathermap'){
+    if(pastDaysParam > 0) throw new Error('OpenWeatherMap does not provide past-day history in this app. Select another forecast source for historical views.');
+    const apiKey = getOpenWeatherMapApiKey();
+    if(!apiKey || apiKey === 'paste_openweathermap_api_key_here') throw new Error('OpenWeatherMap API key is not configured. Add OPENWEATHERMAP_API_KEY to config.js.');
+    const params = new URLSearchParams({ lat: String(lat), lon: String(lon), appid: apiKey, units: 'metric', exclude: 'minutely,alerts' });
+    const res = await fetch(`https://api.openweathermap.org/data/3.0/onecall?${params}`);
+    if(!res.ok) throw new Error(`OpenWeatherMap fetch failed: HTTP ${res.status}`);
+    const data = await res.json();
+    data._fetchedAt = res.headers.get('date') || new Date().toISOString();
+    return buildDataFromOpenWeatherMap(data);
+  }
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&hourly=temperature_2m,apparent_temperature,precipitation,rain,snowfall,wind_speed_10m,wind_direction_10m,precipitation_probability`
     + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset`
@@ -664,7 +739,7 @@ async function fetchForecastLive(lat, lon, pastDaysParam=0, model=WEATHER_MODEL)
 
 // Fetch several models side-by-side for near-term storm cross-checking (Compare Models dialog).
 async function fetchModelComparisonLive(lat, lon){
-  const modelsParam = WEATHER_MODEL_OPTIONS.map(m => m.value).join(',');
+  const modelsParam = WEATHER_MODEL_COMPARISON_OPTIONS.map(m => m.value).join(',');
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&hourly=temperature_2m,precipitation,precipitation_probability`
     + `&timezone=auto&forecast_days=3&past_hours=1&wind_speed_unit=mph&precipitation_unit=mm`
@@ -1977,29 +2052,27 @@ async function showCompareModels(){
   const headerBg = isDark ? '#111827' : '#f3f4f6';
   const cellBg = isDark ? '#0b1220' : '#ffffff';
 
-  let html = `<div style="font-size:12px;opacity:0.8;margin-bottom:8px">Temperature (\u00B0F) and precipitation (mm) per hour across models. A cell shaded red means that model shows much less precipitation than the others for that hour — useful for cross-checking a missed storm.</div>`;
+  let html = `<div style="font-size:12px;opacity:0.8;margin-bottom:8px">Temperature (\u00B0F) and precipitation (mm) per hour across models. Precipitation cells are shaded light blue; the color deepens up to 5 mm.</div>`;
   html += `<table id="compareTable" style="border-collapse:collapse; font: 12px system-ui,Segoe UI,Roboto,sans-serif; width:100%">`;
   html += `<tr><th rowspan="2" style="position:sticky;left:0;background:${headerBg};padding:6px 8px;border:1px solid #374151">Time</th>`;
-  WEATHER_MODEL_OPTIONS.forEach(m=>{ html += `<th colspan="2" style="padding:6px 8px;border:1px solid #374151;text-align:center;background:${headerBg}">${escapeHtml(m.label)}</th>`; });
+  WEATHER_MODEL_COMPARISON_OPTIONS.forEach(m=>{ html += `<th colspan="2" style="padding:6px 8px;border:1px solid #374151;text-align:center;background:${headerBg}">${escapeHtml(m.label)}</th>`; });
   html += '</tr><tr>';
-  WEATHER_MODEL_OPTIONS.forEach(()=>{ html += `<th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Temp</th><th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Precip</th>`; });
+  WEATHER_MODEL_COMPARISON_OPTIONS.forEach(()=>{ html += `<th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Temp</th><th style="padding:4px 8px;border:1px solid #374151;font-weight:400;background:${headerBg}">Precip</th>`; });
   html += '</tr>';
 
   for(let i=nowIdx; i<endIdx; i++){
     const t = times[i];
-    const precipVals = WEATHER_MODEL_OPTIONS.map(m=>{ const arr = hourly[`precipitation_${m.value}`]; return arr ? arr[i] : null; });
-    const maxPrecip = Math.max(0, ...precipVals.filter(v=>v!=null));
     html += `<tr><td style="position:sticky;left:0;background:${cellBg};padding:6px 8px;border:1px solid #374151;white-space:nowrap">${escapeHtml(formatWeatherDataHeader(t, ' '))}</td>`;
-    WEATHER_MODEL_OPTIONS.forEach(m=>{
+    WEATHER_MODEL_COMPARISON_OPTIONS.forEach(m=>{
       const tempArr = hourly[`temperature_2m_${m.value}`];
       const precipArr = hourly[`precipitation_${m.value}`];
       const tempC = tempArr ? tempArr[i] : null;
       const precip = precipArr ? precipArr[i] : null;
       const tempTxt = tempC!=null ? Math.round(tempC*9/5+32)+'\u00B0' : 'N/A';
       const precipTxt = precip!=null ? precip.toFixed(1) : 'N/A';
-      const flagged = (precip!=null && maxPrecip>0.1 && precip < maxPrecip*0.3);
-      const flagStyle = flagged ? 'background:rgba(239,68,68,0.22)' : '';
-      html += `<td style="padding:6px 8px;border:1px solid #374151;text-align:center">${tempTxt}</td><td style="padding:6px 8px;border:1px solid #374151;text-align:center;${flagStyle}">${precipTxt}</td>`;
+      const blueIntensity = precip>0 ? Math.min(1, precip/5) : 0;
+      const precipStyle = blueIntensity ? `background:rgba(96,165,250,${(0.06 + blueIntensity * 0.24).toFixed(3)})` : '';
+      html += `<td style="padding:6px 8px;border:1px solid #374151;text-align:center">${tempTxt}</td><td style="padding:6px 8px;border:1px solid #374151;text-align:center;${precipStyle}">${precipTxt}</td>`;
     });
     html += '</tr>';
   }
@@ -2478,16 +2551,15 @@ function ensureGPSButton(){
   const btn=document.createElement('button');
   btn.id='gpsBtn';
   btn.title='Use device location';
-  btn.setAttribute('aria-label', 'Use GPS');
-  btn.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13.5 6.5 3.5-3.5 4 4-3.5 3.5"/><path d="m6.5 13.5-3.5 3.5 4 4 3.5-3.5"/><path d="m7 7 10 10"/><path d="M3 3v5h5"/><path d="M21 21v-5h-5"/></svg><span>Use GPS</span>';
+  btn.setAttribute('aria-label', 'Use device location');
+  btn.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 2.5a7.5 7.5 0 0 0-7.5 7.5c0 5.43 7.5 12 7.5 12s7.5-6.57 7.5-12A7.5 7.5 0 0 0 12 2.5Zm0 10.5a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z"/></svg>';
   btn.style.height='34px';
   btn.style.minHeight='34px';
   btn.style.boxSizing='border-box';
   btn.style.display='inline-flex';
   btn.style.alignItems='center';
   btn.style.justifyContent='center';
-  btn.style.gap='5px';
-  btn.style.padding='0 8px';
+  btn.style.padding='0 9px';
   btn.style.borderRadius='6px';
   btn.style.cursor='pointer';
   qs.insertAdjacentElement('afterend', btn);
@@ -2682,7 +2754,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     console.info('[PWA] Service workers not supported in this browser');
   }
   
-  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.77`; } catch(e){ console.warn(e); }
+  try { const elJs=$("ver-js"); if(elJs) elJs.textContent = `app.js v7.12.79`; } catch(e){ console.warn(e); }
   
   ensureRangeButton(); ensureAppMenu(); installAndroidBackButtonGuard(); ensureRadarButton(); reserveRightHeaderSpace(); dedupeHeaderControls(); updateChromeForTheme(); updateVersionChip(); ensureScrollScaleSlider(); updateLayoutButtonLabel();
   populateQuickSelectSorted(); ensureGPSButton(); initCityTitleTooltip(); initLocationSearch();
@@ -2795,7 +2867,8 @@ const WEATHER_MODEL_DETAILS = {
   best_match: { agency:'Open-Meteo', coverage:'Global', detail:'Automatically blends the best available high-resolution model for each location. This is the default and what most users should leave selected.' },
   gfs_seamless: { agency:'NOAA (USA)', coverage:'Global, with hourly HRRR refresh over the US/Canada', detail:'Global Forecast System combined with the rapid-refresh HRRR model. ~13 km resolution globally, ~3 km over North America. Updated every 6 hours (HRRR hourly).' },
   ecmwf_ifs025: { agency:'ECMWF (European Union)', coverage:'Global', detail:'European Centre for Medium-Range Weather Forecasts IFS model at 0.25\u00b0 (~25 km) resolution. Widely regarded as one of the most accurate global models. Updated every 6 hours.' },
-  icon_seamless: { agency:'DWD (Germany)', coverage:'Global, Europe, and Central Europe', detail:'Deutscher Wetterdienst ICON model, blending global (~11 km), European (~7 km), and Central European D2 (~2 km) domains. Updated every 3-6 hours.' }
+  icon_seamless: { agency:'DWD (Germany)', coverage:'Global, Europe, and Central Europe', detail:'Deutscher Wetterdienst ICON model, blending global (~11 km), European (~7 km), and Central European D2 (~2 km) domains. Updated every 3-6 hours.' },
+  openweathermap: { agency:'OpenWeatherMap', coverage:'Global', detail:'OpenWeatherMap One Call forecast. PEVcast converts its metric response to the same °F, mm, and mph units used by the other forecast choices.' }
 };
 
 async function showWeatherSourcesDialog(){
@@ -3434,6 +3507,8 @@ function addDayNightBoxesAligned(labels, daily, annotations, yMin, yMax, showSun
     }
   }catch(e){ console.error('addDayNightBoxesAligned failed', e); }
 }
+
+
 
 
 

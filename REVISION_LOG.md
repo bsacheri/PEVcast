@@ -2,6 +2,24 @@
 
 ---
 
+## 7.12.78 - 2026-09-03
+
+> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+
+### Weather Data Popup
+- Updated the Hourly Weather Data popup display, selection, or copy behavior.
+
+### Locations
+- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
+
+### API
+- Updated browser-side API calls, fallback handling, or cache-busting behavior.
+
+### Maintenance
+- Updated application behavior in app.js.
+
+---
+
 ## 7.12.77 - 2026-09-01
 
 > REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
@@ -453,6 +471,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 

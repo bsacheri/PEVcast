@@ -53,6 +53,8 @@ A weather forecasting dashboard that visualizes hourly and daily weather data wi
 3. Select a city or use GPS to load weather data
 4. Explore forecasts with the range and layout controls
 
+To use the optional OpenWeatherMap forecast source, copy `config.example.js` to `config.js` and add an OpenWeatherMap One Call API key to `OPENWEATHERMAP_API_KEY`. PEVcast converts that provider's metric response to the same Fahrenheit, millimetre, and miles-per-hour units used by the other forecast sources.
+
 ### No Installation Required
 PEVcast is a standalone web app with no build process or dependencies to install.
 
@@ -64,7 +66,7 @@ PEVcast is a standalone web app with no build process or dependencies to install
   - Chrome/Edge 90+
   - Firefox 88+
   - Safari 14+
-- **Internet**: Required for real-time weather data (Open-Meteo API)
+- **Internet**: Required for real-time weather data (Open-Meteo API, or OpenWeatherMap when selected)
 - **JavaScript**: Must be enabled
 
 ---

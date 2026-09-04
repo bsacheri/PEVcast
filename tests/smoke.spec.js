@@ -219,7 +219,7 @@ test('GPS resolving overlay can be canceled back to the last location', async ({
     navigator.geolocation.getCurrentPosition = () => {};
   });
 
-  await page.getByRole('button', { name: 'Use GPS' }).click();
+  await page.getByRole('button', { name: 'Use device location' }).click();
   await expect(page.locator('#locationLoadingOverlay')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
 
