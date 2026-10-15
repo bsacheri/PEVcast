@@ -2,6 +2,27 @@
 
 ---
 
+## 7.12.80 - 2026-10-15
+
+> REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
+
+### Chart
+- Updated chart rendering, annotations, labels, or weather overlays.
+
+### Menu and Dialogs
+- Updated menu options, About dialog controls, or app dialogs.
+
+### Weather Data Popup
+- Updated the Hourly Weather Data popup display, selection, or copy behavior.
+
+### Locations
+- Updated saved locations, GPS defaults, or reverse-geocoding behavior.
+
+### Maintenance
+- Updated application behavior in app.js.
+
+---
+
 ## 7.12.78 - 2026-09-03
 
 > REVIEW ME: Auto-generated during version sync. Edit these notes before publishing if more detail or different grouping would help.
@@ -471,6 +492,7 @@
 
 ### Maintenance
 - Initial PEVcast development.
+
 
 
 
